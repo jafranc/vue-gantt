@@ -4,7 +4,7 @@
 	"author": "Frederiek <frederiek@salamander.be>",
 	"license": "Apache",
 	"version": "0.0.2",
-	"main": "./dist/vue-gantt.common.js",
+	"main": "../trame_code/module/serve/vue-gantt.common.js",
 	"keywords": [
 		"vue",
 		"Gantt"
@@ -13,21 +13,21 @@
 		"serve": "vue-cli-service serve",
 		"build": "vue-cli-service build",
 		"docs": "vue-cli-service build --dest docs",
-		"build-bundle": "vue-cli-service build --target lib --name vue-gantt ./src/components/index.js",
+		"build-bundle": "vue-cli-service build --dest ../trame_code/module/serve --target lib --name vue-gantt ./src/components/index.js",
 		"lint": "vue-cli-service lint"
 	},
 	"dependencies": {
-		"vue": "^2.5.17"
+		"vue": "^2.7.16"
 	},
 	"devDependencies": {
 		"@vue/cli-plugin-babel": "^3.0.4",
 		"@vue/cli-plugin-eslint": "^3.0.4",
 		"@vue/cli-service": "^3.0.4",
-		"node-sass": "^4.9.0",
-		"sass-loader": "^7.0.1",
-		"vue-flatpickr-component": "^8.0.0",
-		"vue-moment": "^4.0.0",
-		"vue-template-compiler": "^2.5.17"
+		"node-sass": "^4.14.1",
+		"sass-loader": "^9.0.3",
+		"vue-flatpickr-component": "^8.1.8",
+		"vue-moment": "^4.1.0",
+		"vue-template-compiler": "^2.7.16"
 	},
 	"eslintConfig": {
 		"root": true,
