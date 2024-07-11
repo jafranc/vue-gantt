@@ -449,7 +449,7 @@ $childItemFontSize: 12px;
 
                         <div class="table-group">
                             <template v-if="localFields.hasOwnProperty(field)" v-for="(field, slug) in Object.keys(item)">
-                                <gantt-user v-if="localFields[field].component === 'gantt-user'" class="table-cell" v-model="item[field]" :style="{ 'padding-left': (field === longest_cell.slug && item.isChild) ? indent + 'px' : ''  }" :key="slug" :width="localFields[field].width" :user="user" :editable="!item.isParent"></gantt-user>
+                                <gantt-user  v-if="localFields[field].component === 'gantt-user'" class="table-cell" v-model="item[field]" :style="{ 'padding-left': (field === longest_cell.slug && item.isChild) ? indent + 'px' : ''  }" :key="slug" :width="localFields[field].width" :user="user" :editable="!item.isParent"></gantt-user>
                                 <gantt-text v-if="localFields[field].component === 'gantt-text'" class="table-cell" v-model="item[field]" :style="{ 'padding-left': (field === longest_cell.slug && item.isChild) ? indent + 'px' : ''  }" :key="slug" :width="localFields[field].width" @update="cellUpdated(localFields[field].callback, item)"></gantt-text>
                                 <gantt-date v-if="localFields[field].component === 'gantt-date'" class="table-cell" v-model="item[field]" :style="{ 'padding-left': (field === longest_cell.slug && item.isChild) ? indent + 'px' : ''  }" :key="slug" :width="localFields[field].width" :minDate="item[localFields[field].minDate]" @update="cellUpdated(localFields[field].callback, item)" :editable="!item.isParent"></gantt-date>
                                 <gantt-number v-if="localFields[field].component === 'gantt-number'" class="table-cell" v-model="item[field]" :style="{ 'padding-left': (field === longest_cell.slug && item.isChild) ? indent + 'px' : ''  }" :key="slug" :width="localFields[field].width" :min="localFields[field].min" :max="localFields[field].max" :suffix="localFields[field].suffix" @update="cellUpdated(localFields[field].callback, item)" :editable="!item.isParent"></gantt-number>
@@ -739,7 +739,7 @@ export default {
 				}
 			})
 
-            window.localFirstDate = earliest_date
+      window.localFirstDate = earliest_date
             
 			return result
 		},
@@ -797,8 +797,10 @@ export default {
         */
 		cellUpdated(callback, cell) {
 			if (callback) this[callback](cell)
-
-			this.$emit('update', cell)
+      console.log('cell updated');
+      // this.$emit('input', this.items)
+      // console.log(this.items)
+			this.$emit('update', this.localItems)
 		},
 
 		/*
@@ -909,6 +911,7 @@ export default {
 		dateUpdated(itemId, newDate) {
 			let item = this.localItems.find(item => item.id === parseInt(itemId))
 			item.start_date = newDate
+      console.log('date updated')
 		},
 
 		/*
@@ -1007,6 +1010,7 @@ export default {
 				}
 			}
 
+      // eslint-disable-next-line vue/no-side-effects-in-computed-properties
 			this.sortBy = false
 
 			return items
@@ -1019,7 +1023,15 @@ export default {
         */
 		dates: function() {
 			this.localEndDate = this.dates[this.dates.length - 1].date
-		}
+		},
+    localItems(v){
+      this.$emit('update', v)
+    },
+    items(v)
+    {
+      this.localItems = v;
+    }
+
 	}
 }
 </script>
