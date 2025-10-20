@@ -27,7 +27,7 @@ const props = defineProps({
 });
 
 // Définition des événements
-const emit = defineEmits(['task-selected']);
+const emit = defineEmits(['task-selected','task-hovered']);
 
 // Référence au conteneur DOM pour D3
 const ganttContainer = ref(null);
@@ -90,6 +90,27 @@ const renderChart = () => {
         .style('cursor', 'pointer')
         .on('click', () => {
           emit('task-selected', task);
+        })
+        // Nouveaux événements pour le survol
+        .on('mouseenter', (event) => {
+          const [mouseX, mouseY] = d3.pointer(event); // Coordonnées relatives au SVG
+          // Ajouter un effet visuel sur la barre (optionnel, mais recommandé)
+          d3.select(event.currentTarget).style('opacity', 1.0);
+          emit('task-hovered', {
+            task: task,
+            isHovering: true,
+            x: mouseX,
+            y: barY // Utiliser la position Y de la barre pour un positionnement stable
+          });
+        })
+        .on('mouseleave', (event) => {
+          d3.select(event.currentTarget).style('opacity', 0.8);
+          emit('task-hovered', {
+            task: task,
+            isHovering: false,
+            x: 0,
+            y: 0
+          });
         });
 
     // Nom de la tâche (à gauche)
