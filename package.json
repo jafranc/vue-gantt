@@ -3,31 +3,24 @@
 	"description": "A VueJs Gantt chart.",
 	"author": "Frederiek <frederiek@salamander.be>",
 	"license": "Apache",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"main": "../trame_code/module/serve/vue-gantt.common.js",
 	"keywords": [
-		"vue",
+		"vue3",
 		"Gantt"
 	],
 	"scripts": {
-		"serve": "vue-cli-service serve",
-		"build": "vue-cli-service build",
-		"docs": "vue-cli-service build --dest docs",
-		"build-bundle": "vue-cli-service build --dest ../trame_code/module/serve --target lib --name vue-gantt ./src/components/index.js",
-		"lint": "vue-cli-service lint"
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview"
 	},
 	"dependencies": {
-		"vue": "^2.7.16"
+		"vue": "^3.4.27",
+		"d3": "^7.9.0"
 	},
 	"devDependencies": {
-		"@vue/cli-plugin-babel": "^3.0.4",
-		"@vue/cli-plugin-eslint": "^3.0.4",
-		"@vue/cli-service": "^3.0.4",
-		"node-sass": "^4.14.1",
-		"sass-loader": "^9.0.3",
-		"vue-flatpickr-component": "^8.1.8",
-		"vue-moment": "^4.1.0",
-		"vue-template-compiler": "^2.7.16"
+		"@vitejs/plugin-vue": "^5.0.4",
+		"vite": "^5.2.12"
 	},
 	"eslintConfig": {
 		"root": true,
@@ -42,26 +35,5 @@
 		"parserOptions": {
 			"parser": "babel-eslint"
 		}
-	},
-	"postcss": {
-		"plugins": {
-			"autoprefixer": {}
-		}
-	},
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/salamanderbe/vue-gantt"
-	},
-	"files": [
-		"dist/*",
-		"src/*",
-		"public/*",
-		"*.json",
-		"*.js"
-	],
-	"browserslist": [
-		"> 1%",
-		"last 2 versions",
-		"not ie <= 8"
-	]
+	}
 }
