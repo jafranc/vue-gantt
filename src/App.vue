@@ -127,16 +127,6 @@ const tooltipStyle = computed(() => {
     <h1 class="text-3xl font-bold mb-4 text-indigo-700">Vue 3 / D3 Gantt Chart</h1>
     <p class="mb-4 text-gray-600">Cliquez sur une barre pour sélectionner une tâche. Survolez-la pour voir les détails (tooltip). **Glissez les barres pour les déplacer.**</p>
 
-    <!-- Affichage de la tâche sélectionnée -->
-    <div class="mb-6 p-4 bg-white shadow rounded-lg border-l-4 border-indigo-500">
-      <p class="font-medium text-sm text-gray-700">
-        Dernière tâche sélectionnée :
-        <span class="font-semibold text-indigo-600">
-          {{ selectedTaskName || 'Aucune' }}
-        </span>
-      </p>
-    </div>
-
     <!-- Conteneur principal du graphique de Gantt -->
     <div ref="ganttRect" id="gantt-container" class="relative bg-white p-4 shadow-xl rounded-xl">
       <GanttChart
