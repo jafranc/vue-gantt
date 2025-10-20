@@ -1,6 +1,6 @@
 <script setup>
-import * as d3 from 'd3';
 import { ref, watch, onMounted, computed, nextTick } from 'vue';
+import * as d3 from 'd3';
 
 const props = defineProps({
   tasks: Array,
@@ -8,94 +8,121 @@ const props = defineProps({
   endDate: String,
 });
 
-// Événements émis : nous conservons 'task-hovered' et 'task-moved'
 const emit = defineEmits(['task-hovered', 'task-moved']);
 
 const ganttContainer = ref(null);
-const availableWidth = computed(() => ganttContainer.value ? ganttContainer.value.clientWidth : 0);
-const availableHeight = computed(() => props.tasks.length * 40 + 60);
+const availableWidth = ref(0);
+const margin = { top: 40, right: 20, bottom: 30, left: 50 };
+const height = computed(() => props.tasks.length * 40 + margin.top + margin.bottom);
+const isDragging = ref(false); // Flag pour éviter le clic après le drag
 
-// État pour l'édition de la durée au double-clic
-const editingTask = ref(null); // { task: {}, x: 0, y: 0, duration: 0, newDuration: 0 }
+// --- Fonctions utilitaires de Durée (Déplacées ici pour la réutilisation) ---
 
-// Les autres calculs (scales, margins, etc.) restent les mêmes.
-const xScale = computed(() => {
-  if (!availableWidth.value || !props.startDate || !props.endDate) return null;
-  const start = new Date(props.startDate);
-  const end = new Date(props.endDate);
-  end.setDate(end.getDate() + 1);
-  return d3.scaleTime()
-      .domain([start, end])
-      .range([50, availableWidth.value - 20]);
-});
-
-const yScale = computed(() => {
-  return d3.scaleBand()
-      .domain(props.tasks.map(t => t.name))
-      .range([40, availableHeight.value - 20])
-      .padding(0.2);
-});
-
-// --- LOGIQUE DE DUREE ET D'EDITION ---
-
-// Calcule la durée en jours, y compris le jour de fin (si startDate='2025-01-01', endDate='2025-01-01', durée=1 jour)
-const calculateDurationInDays = (start, end) => {
+// Calcule la durée en jours entre deux dates (intervalle inclusif)
+const getDurationInDays = (start, end) => {
+  if (!start || !end) return 0;
   const startDate = new Date(start);
   const endDate = new Date(end);
+  if (startDate.getTime() > endDate.getTime()) return 0;
   const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-  // Ajoute +1 jour pour rendre l'intervalle inclusif
+  // Ajoute +1 jour pour inclure les jours de début et de fin
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
-const saveDuration = () => {
-  if (!editingTask.value) return;
-
-  const task = editingTask.value.task;
-  const newDays = parseInt(editingTask.value.newDuration);
-  const originalDuration = editingTask.value.duration;
-
-  // Si la valeur est invalide ou n'a pas changé, on annule.
-  if (isNaN(newDays) || newDays <= 0 || newDays === originalDuration) {
-    editingTask.value = null;
-    return;
-  }
-
-  // Calculer la nouvelle date de fin: date de début + (newDays - 1) jours
-  // -1 jour car le calcul ci-dessus ajoute +1 pour être inclusif.
-  const newEndDate = new Date(task.start);
-  newEndDate.setDate(newEndDate.getDate() + newDays - 1);
-
-  // Émettre l'événement de mouvement/changement de durée
-  emit('task-moved', {
-    id: task.id,
-    newStart: task.start, // La date de début ne change pas
-    newEnd: newEndDate.toISOString().split('T')[0] // Nouvelle date de fin
-  });
-
-  // Cacher le champ d'édition
-  editingTask.value = null;
+// Ajoute un certain nombre de jours à une date (soustrait 1 jour pour l'intervalle inclusif)
+const addDaysToDate = (dateStr, days) => {
+  if (!dateStr || days <= 0) return dateStr;
+  const date = new Date(dateStr);
+  // days - 1 car la durée de 1 jour (ex: 1er au 1er) est une différence de 0 jour.
+  date.setDate(date.getDate() + days - 1);
+  return d3.timeFormat('%Y-%m-%d')(date);
 };
+
+// --- État d'Édition de Tâche (CONSOLIDÉ) ---
+// Contient les métadonnées (x, y), les dates (start, end) ET la durée (durationDays)
+const editingTask = ref(null);
+
+// Durée calculée à afficher (se met à jour quand start ou end changent)
+const displayDurationInDays = computed(() => {
+  if (!editingTask.value) return 0;
+  return getDurationInDays(editingTask.value.start, editingTask.value.end);
+});
+
+// Style du formulaire d'édition (positionné absolument sur la barre)
+const editingFormStyle = computed(() => {
+  // Nécessite l'existence de la tâche ET de ses coordonnées
+  if (!editingTask.value || !editingTask.value.x || !editingTask.value.y) return {};
+
+  // Les coordonnées x et y sont relatives au SVG.
+  const xOffset = margin.left;
+
+  return {
+    position: 'absolute',
+    left: `${editingTask.value.x + xOffset}px`,
+    top: `${editingTask.value.y + margin.top + 5}px`, // Place sous la barre
+    transform: 'translateX(-50%)',
+    zIndex: 30,
+    minWidth: '320px', // Agrandir le formulaire pour les 3 champs
+  };
+});
+
+// --- Gestionnaire de Double-Clic ---
+const handleDblClick = (task, event) => {
+  const xPos = xScale.value(new Date(task.start));
+  const yPos = yScale.value(task.name);
+
+  // CONSOLIDATION: Toutes les données nécessaires sont stockées ici.
+  editingTask.value = {
+    id: task.id,
+    name: task.name,
+    start: task.start,
+    end: task.end,
+    // Initialiser la durée à partir des dates actuelles
+    durationDays: getDurationInDays(task.start, task.end),
+    x: xPos,
+    y: yPos,
+  };
+
+  // Met le focus sur le premier champ de saisie
+  nextTick(() => {
+    document.querySelector('.gantt-edit-form input').focus();
+  });
+};
+
+// --- Watcher pour la durée ---
+watch(() => editingTask.value?.durationDays, (newDuration, oldDuration) => {
+  // S'assure que nous ne sommes pas en mode initialisation et que la durée est valide
+  if (editingTask.value && newDuration && newDuration !== oldDuration) {
+    // La modification de la durée recalcule la date de fin
+    editingTask.value.end = addDaysToDate(editingTask.value.start, newDuration);
+  }
+});
+
+// --- Watcher pour la date de début ---
+watch(() => editingTask.value?.start, (newStart, oldStart) => {
+  // Si la date de début change, la date de fin est recalculee
+  if (editingTask.value && newStart && newStart !== oldStart) {
+    editingTask.value.end = addDaysToDate(newStart, editingTask.value.durationDays);
+  }
+});
+
 // --- Logique de Sauvegarde (Submit) ---
 const saveDates = () => {
-  // Lit directement les propriétés éditables de l'objet consolidé
-  const { d, x, y, duration, newDuration, start, end } = editingTask.value;
+  const { id, name, start, end } = editingTask.value;
 
   // Validation simple
   const newStart = new Date(start);
   const newEnd = new Date(end);
 
-  if (newStart.getTime() > newEnd.getTime()) {
-    // Remplacer alert() par une solution UI plus douce si possible
-    console.error("La date de début ne peut pas être postérieure à la date de fin.");
-    // Utilisation temporaire d'alert, à remplacer par une boîte de dialogue personnalisée
-    // car alert() ne fonctionne pas bien dans les iframes.
-    alert("La date de début ne peut pas être postérieure à la date de fin.");
+  if (newStart.getTime() >= newEnd.getTime()) { // Utilise >= pour éviter les chevauchements ou durée nulle
+    console.error("La date de début doit être strictement antérieure à la date de fin.");
+    alert("La date de début doit être strictement antérieure à la date de fin.");
     return;
   }
 
   emit('task-moved', {
-    id: d.id,
-    name: d.name,
+    id,
+    name,
     newStart: start,
     newEnd: end,
   });
@@ -103,268 +130,208 @@ const saveDates = () => {
   // Ferme le formulaire d'édition
   editingTask.value = null;
 };
-// --- LOGIQUE DE POSITIONNEMENT DU CHAMP D'EDITION ---
 
-const tooltipStyle = computed(() => {
-  if (!editingTask.value) return {};
-  // 50px correspond à la marge de l'axe Y dans D3 (translate(50, 0))
-  const xOffset = 50;
+// --- Échelles D3 (restent inchangées) ---
+const xScale = ref(null);
+const yScale = ref(null);
 
-  return {
-    position: 'absolute',
-    left: `${editingTask.value.x + xOffset - 10}px`, // Petit décalage à gauche
-    top: `${editingTask.value.y - 12}px`, // -12px pour centrer verticalement le champ
-  };
-});
+const setupScales = (width) => {
+  const start = new Date(props.startDate);
+  const end = new Date(props.endDate);
 
+  xScale.value = d3.scaleTime()
+      .domain([start, end])
+      .range([0, width - margin.left - margin.right]);
 
-// --- LOGIQUE DE DRAG D3 ---
+  yScale.value = d3.scaleBand()
+      .domain(props.tasks.map(t => t.name))
+      .range([0, props.tasks.length * 40])
+      .paddingInner(0.1);
+};
 
-let taskDurationMs = 0;
-let isDragging = false;
-
+// --- Rendu D3 (reste inchangé) ---
 const renderChart = () => {
-  if (!ganttContainer.value || !xScale.value || !yScale.value) return;
+  if (!props.tasks.length || !ganttContainer.value) return;
 
-  d3.select(ganttContainer.value).selectAll('*').remove();
+  availableWidth.value = ganttContainer.value.clientWidth;
+  const width = availableWidth.value;
 
-  const svg = d3.select(ganttContainer.value)
-      .append('svg')
-      .attr('width', availableWidth.value)
-      .attr('height', availableHeight.value);
+  setupScales(width);
 
-  // Helper pour gérer le double-clic
-  const handleDblClick = function(event, d) {
-    // Cacher le tooltip si visible
-    emit('task-hovered', { task: d, isHovering: false, x: 0, y: 0 });
+  const svgContent = d3.select(ganttContainer.value);
+  svgContent.selectAll('*').remove();
 
-    const currentDuration = calculateDurationInDays(d.start, d.end);
+  const svg = svgContent.append('svg')
+      .attr('width', width)
+      .attr('height', height.value);
 
-    editingTask.value = {
-      task: d,
-      // Positionner au début de la barre + 5px
-      x: xScale.value(new Date(d.start)) + 5,
-      y: yScale.value(d.name) + yScale.value.bandwidth() / 2,
-      duration: currentDuration,
-      newDuration: currentDuration,
-      start: d.start,
-      end: d.end
-    };
+  const g = svg.append('g')
+      .attr('transform', `translate(${margin.left}, ${margin.top})`);
 
-    // Focus sur l'input après le rendu DOM
-    nextTick(() => {
-      const input = document.querySelector('.duration-editor input');
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    });
-  };
+  g.append('g')
+      .attr('transform', `translate(0, ${props.tasks.length * 40})`)
+      .call(d3.axisBottom(xScale.value));
 
-  // 1. Définir le comportement de Drag
+  g.append('g')
+      .call(d3.axisLeft(yScale.value));
+
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
-        isDragging = false;
-        console.log("DRAG START: Tentative de glisser la tâche:", d.name);
-
-        // Cacher l'éditeur si visible
-        editingTask.value = null;
-        // Cacher le tooltip
-        emit('task-hovered', { task: d, isHovering: false, x: 0, y: 0 });
-
-        const startDate = new Date(d.start);
-        const endDate = new Date(d.end);
-        taskDurationMs = endDate.getTime() - startDate.getTime();
-
-        d3.select(this)
-            .style('filter', 'url(#glow)')
-            .style('cursor', 'grabbing');
+        isDragging.value = false;
+        d3.select(this).raise().classed('dragging', true);
+        console.log(`DRAG START: Tentative de glisser la tâche: ${d.name}`);
       })
       .on('drag', function(event, d) {
-        // Confirmer qu'un glissement a eu lieu après un petit mouvement
-        if (Math.abs(event.dx) > 2 || Math.abs(event.dy) > 2) {
-          isDragging = true;
-        }
-
+        isDragging.value = true;
         const newX = event.x;
-        // Déplacer visuellement la barre
         d3.select(this).attr('x', newX);
         console.log(`DRAG: Position X: ${newX}`);
       })
       .on('end', function(event, d) {
-        d3.select(this)
-            .style('filter', null)
-            .style('cursor', 'grab');
+        d3.select(this).classed('dragging', false);
 
-        if (!isDragging) {
-          console.log("DRAG END: Non glissé (simple clic ou immobilité)");
-          return;
+        if (isDragging.value) {
+          const newStartDate = xScale.value.invert(event.x);
+          const originalDuration = new Date(d.end).getTime() - new Date(d.start).getTime();
+          const newEndDate = new Date(newStartDate.getTime() + originalDuration);
+
+          const newStartFormatted = d3.timeFormat('%Y-%m-%d')(newStartDate);
+          const newEndFormatted = d3.timeFormat('%Y-%m-%d')(newEndDate);
+
+          console.log(`DRAG END: Nouvelle date de début calculée: ${newStartFormatted}`);
+
+          emit('task-moved', {
+            id: d.id,
+            name: d.name,
+            newStart: newStartFormatted,
+            newEnd: newEndFormatted,
+          });
         }
-
-        const newStartDate = xScale.value.invert(event.x);
-        const newEndDate = new Date(newStartDate.getTime() + taskDurationMs);
-
-        console.log(`DRAG END: Nouvelle date de début calculée: ${newStartDate}`);
-
-        // 4. Émettre l'événement pour la mise à jour de l'état du parent
-        emit('task-moved', {
-          id: d.id,
-          newStart: newStartDate.toISOString().split('T')[0],
-          newEnd: newEndDate.toISOString().split('T')[0]
-        });
-
-        isDragging = false;
+        isDragging.value = false;
       });
 
-  // 2. Dessiner l'axe X (Dates)
-  const xAxis = d3.axisBottom(xScale.value)
-      .ticks(d3.timeWeek.every(1))
-      .tickFormat(d3.timeFormat("%b %d"));
-
-  svg.append('g')
-      .attr('transform', `translate(0, ${availableHeight.value - 20})`)
-      .call(xAxis)
-      .selectAll('text')
-      .attr('transform', 'rotate(-45)')
-      .style('text-anchor', 'end');
-
-  // 3. Dessiner l'axe Y (Noms des Tâches)
-  const yAxis = d3.axisLeft(yScale.value).tickSize(0);
-
-  svg.append('g')
-      .attr('transform', `translate(50, 0)`)
-      .call(yAxis)
-      .select('.domain').remove();
-
-  // 4. Définir un filtre pour l'effet de surbrillance pendant le drag
-  const defs = svg.append('defs');
-  defs.append('filter')
-      .attr('id', 'glow')
-      .append('feGaussianBlur')
-      .attr('stdDeviation', 2.5)
-      .attr('result', 'coloredBlur');
-  defs.select('#glow')
-      .append('feMerge')
-      .append('feMergeNode')
-      .attr('in', 'coloredBlur');
-  defs.select('#glow')
-      .select('feMerge')
-      .append('feMergeNode')
-      .attr('in', 'SourceGraphic');
-
-  // 5. Dessiner les barres de tâches
   props.tasks.forEach((task) => {
-    const startX = xScale.value(new Date(task.start));
-    const endX = xScale.value(new Date(task.end));
-    const barWidth = endX - startX;
-    const barY = yScale.value(task.name);
-    const barHeight = yScale.value.bandwidth();
+    const xStart = xScale.value(new Date(task.start));
+    const xEnd = xScale.value(new Date(task.end));
+    const width = xEnd - xStart;
+    const yPos = yScale.value(task.name);
 
-    // Barre de tâche (élément <rect>)
-    svg.append('rect')
+    const rect = g.append('rect')
         .datum(task)
-        .attr('x', startX)
-        .attr('y', barY)
-        .attr('width', barWidth > 0 ? barWidth : 0)
-        .attr('height', barHeight)
-        .attr('rx', 3)
-        .style('fill', task.color || '#4A90E2')
-        .style('opacity', 0.8)
+        .attr('x', xStart)
+        .attr('y', yPos)
+        .attr('width', width)
+        .attr('height', yScale.value.bandwidth())
+        .attr('fill', task.color)
+        .attr('rx', 4)
         .style('cursor', 'grab')
-        // Attacher le comportement de drag
-        .call(dragHandler)
-        // NOUVEL ÉVÉNEMENT : Double-clic
-        .on('dblclick', handleDblClick)
-        // Événements de survol (mouseenter/mouseleave)
-        .on('mouseenter', (event, d) => {
-          if (isDragging || editingTask.value) return; // Ignorer si drag ou édition
-
-          const [mouseX] = d3.pointer(event);
-          d3.select(event.currentTarget).style('opacity', 1.0);
-          emit('task-hovered', {
-            task: d,
-            isHovering: true,
-            x: mouseX,
-            y: barY
-          });
+        .on('mouseenter', (event) => {
+          const [x, y] = d3.pointer(event);
+          emit('task-hovered', { task: task, isHovering: true, x: x + margin.left, y: y + margin.top });
+          d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
         })
         .on('mouseleave', (event) => {
-          if (isDragging || editingTask.value) return; // Ignorer si drag ou édition
-
-          d3.select(event.currentTarget).style('opacity', 0.8);
-          emit('task-hovered', {
-            task: task,
-            isHovering: false,
-            x: 0,
-            y: 0
-          });
+          emit('task-hovered', { task: task, isHovering: false });
+          d3.select(event.currentTarget).style('filter', 'none');
+        })
+        .on('dblclick', function(event) {
+          handleDblClick(task, event);
         });
+
+    dragHandler(rect);
   });
+
+  g.selectAll(".task-label")
+      .data(props.tasks)
+      .enter()
+      .append("text")
+      .text(d => d.name)
+      .attr("x", d => xScale.value(new Date(d.start)) + 5)
+      .attr("y", d => yScale.value(d.name) + yScale.value.bandwidth() / 2 + 5)
+      .attr("fill", "black")
+      .style("pointer-events", "none")
+      .style("font-size", "12px");
 };
 
+// --- Hooks et Watchers ---
 onMounted(() => {
-  renderChart();
   window.addEventListener('resize', renderChart);
+  renderChart();
 });
 
-watch([() => props.tasks, availableWidth], renderChart, { deep: true });
+watch(
+    () => props.tasks,
+    () => {
+      renderChart();
+    },
+    { deep: true }
+);
+
 </script>
 
 <template>
-  <div ref="ganttContainer" class="gantt-chart-container">
-    <!-- Le graphique SVG sera injecté ici par D3 -->
+  <div ref="ganttContainer" class="relative w-full overflow-x-auto">
+    <!-- Le SVG du graphique sera rendu ici par D3 -->
   </div>
 
-  <!-- Éditeur de Durée au Double-Clic -->
-  <div
-      v-if="editingTask"
-      class="duration-editor"
-      :style="tooltipStyle"
-  >
-    <input
-        type="number"
-        v-model.number="editingTask.newDuration"
-        min="1"
-        @keydown.enter="saveDuration"
-        @blur="saveDuration"
-        class="border rounded px-1 w-16 text-sm"
-    />
-    <input
-        type="date"
-        v-model.number="editingTask.start"
-        @keydown.enter="saveDates"
-        @blur="saveDates"
-        class="border rounded px-1 w-16 text-sm"
-    />
-    <span class="text-xs ml-1 font-semibold text-gray-700">jours</span>
+  <!-- Formulaire d'édition (visible seulement en cas de double-clic) -->
+  <div v-if="editingTask"
+       :style="editingFormStyle"
+       class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
+    <div class="text-sm font-semibold text-gray-700 mb-2">Éditer: {{ editingTask.name }}</div>
+
+    <!-- NOUVEAU: Champ d'édition de la durée -->
+    <label class="text-xs font-medium text-gray-600">
+      Durée (jours):
+      <input type="number"
+             v-model.number="editingTask.durationDays"
+             min="1"
+             class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+    </label>
+
+    <hr class="border-gray-200 my-1">
+
+    <!-- Champ de Date de Début -->
+    <label class="text-xs font-medium text-gray-600">
+      Début:
+      <input type="date" v-model="editingTask.start"
+             class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+    </label>
+
+    <!-- Champ de Date de Fin (Mise à jour automatique par le watch ou éditable manuellement) -->
+    <label class="text-xs font-medium text-gray-600">
+      Fin:
+      <input type="date" v-model="editingTask.end"
+             class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+    </label>
+
+    <div class="mt-3 flex justify-between items-center">
+        <span class="text-xs font-bold text-blue-600">
+            Durée effective: {{ displayDurationInDays }} j.
+        </span>
+      <button @click="saveDates"
+              class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1 px-3 rounded-md transition duration-150">
+        Valider
+      </button>
+    </div>
+
+    <!-- Bouton pour annuler -->
+    <button @click="editingTask = null" class="absolute top-1 right-1 text-gray-500 hover:text-gray-800 text-xs">
+      &times;
+    </button>
   </div>
 </template>
 
 <style scoped>
-.gantt-chart-container {
-  width: 100%;
-  overflow-x: auto;
-  min-height: 200px;
-  position: relative; /* Nécessaire pour positionner l'éditeur absolument */
+.dragging {
+  opacity: 0.7;
+  filter: brightness(1.2);
 }
-.duration-editor {
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  background-color: white;
-  padding: 4px;
-  border-radius: 4px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+.gantt-edit-form {
+  /* Style pour s'assurer que le formulaire flotte bien */
+  box-sizing: border-box;
+  /* NOUVEAU: Arrière-plan blanc avec 90% d'opacité */
+  background-color: rgba(255, 255, 255, 0.9);
 }
-:deep(svg text) {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-}
-:deep(svg .tick line) {
-  stroke: #ccc;
-  stroke-dasharray: 2,2;
-}
-:deep(svg .task-group rect) {
-  transition: opacity 0.2s ease;
-}
+
 </style>
