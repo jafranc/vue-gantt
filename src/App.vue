@@ -35,7 +35,7 @@ const projectEnd = '2025-12-30';
 
 // Liste réactive des tâches
 const sampleTasks = ref([
-  { id: 1, name: 'Analyse des Besoins', start: '2025-10-20', end: '2025-10-30', category: 'Phase 1', progress: 100, color: '#FF7F50' },
+  { id: 1, name: 'Analyse des Besoins', start: '2025-10-20', end: '2125-10-30', category: 'Phase 1', progress: 100, color: '#FF7F50' },
   { id: 2, name: 'Conception du Schéma', start: '2025-10-25', end: '2025-11-05', category: 'Phase 1', progress: 75, color: '#3CB371' },
   { id: 3, name: 'Développement Backend', start: '2025-11-01', end: '2025-11-25', category: 'Phase 2', progress: 40, color: '#4682B4' },
   { id: 4, name: 'Développement Frontend', start: '2025-11-10', end: '2025-12-05', category: 'Phase 2', progress: 10, color: '#DAA520' },
