@@ -75,7 +75,34 @@ const saveDuration = () => {
   // Cacher le champ d'édition
   editingTask.value = null;
 };
+// --- Logique de Sauvegarde (Submit) ---
+const saveDates = () => {
+  // Lit directement les propriétés éditables de l'objet consolidé
+  const { d, x, y, duration, newDuration, start, end } = editingTask.value;
 
+  // Validation simple
+  const newStart = new Date(start);
+  const newEnd = new Date(end);
+
+  if (newStart.getTime() > newEnd.getTime()) {
+    // Remplacer alert() par une solution UI plus douce si possible
+    console.error("La date de début ne peut pas être postérieure à la date de fin.");
+    // Utilisation temporaire d'alert, à remplacer par une boîte de dialogue personnalisée
+    // car alert() ne fonctionne pas bien dans les iframes.
+    alert("La date de début ne peut pas être postérieure à la date de fin.");
+    return;
+  }
+
+  emit('task-moved', {
+    id: d.id,
+    name: d.name,
+    newStart: start,
+    newEnd: end,
+  });
+
+  // Ferme le formulaire d'édition
+  editingTask.value = null;
+};
 // --- LOGIQUE DE POSITIONNEMENT DU CHAMP D'EDITION ---
 
 const tooltipStyle = computed(() => {
@@ -119,7 +146,9 @@ const renderChart = () => {
       x: xScale.value(new Date(d.start)) + 5,
       y: yScale.value(d.name) + yScale.value.bandwidth() / 2,
       duration: currentDuration,
-      newDuration: currentDuration
+      newDuration: currentDuration,
+      start: d.start,
+      end: d.end
     };
 
     // Focus sur l'input après le rendu DOM
@@ -298,6 +327,13 @@ watch([() => props.tasks, availableWidth], renderChart, { deep: true });
         min="1"
         @keydown.enter="saveDuration"
         @blur="saveDuration"
+        class="border rounded px-1 w-16 text-sm"
+    />
+    <input
+        type="date"
+        v-model.number="editingTask.start"
+        @keydown.enter="saveDates"
+        @blur="saveDates"
         class="border rounded px-1 w-16 text-sm"
     />
     <span class="text-xs ml-1 font-semibold text-gray-700">jours</span>
