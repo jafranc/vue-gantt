@@ -1,109 +1,179 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
 import * as d3 from 'd3';
+import { ref, watch, onMounted, computed } from 'vue';
 
-// Définition des propriétés (Props)
 const props = defineProps({
-  tasks: {
-    type: Array,
-    required: true,
-    default: () => []
-  },
-  startDate: {
-    type: [String, Date],
-    default: () => new Date()
-  },
-  endDate: {
-    type: [String, Date],
-    default: () => new Date(new Date().setMonth(new Date().getMonth() + 1))
-  },
-  options: {
-    type: Object,
-    default: () => ({
-      barHeight: 30,
-      margin: { top: 20, right: 20, bottom: 20, left: 150 }
-    })
-  }
+  tasks: Array,
+  startDate: String,
+  endDate: String,
 });
 
-// Définition des événements
-const emit = defineEmits(['task-selected','task-hovered']);
+// Événements émis : nous conservons 'task-hovered' et 'task-moved'
+const emit = defineEmits(['task-hovered', 'task-moved']);
 
-// Référence au conteneur DOM pour D3
 const ganttContainer = ref(null);
-const chartWidth = ref(0);
-const chartHeight = ref(400);
+const availableWidth = computed(() => ganttContainer.value ? ganttContainer.value.clientWidth : 0);
+const availableHeight = computed(() => props.tasks.length * 40 + 60);
 
-// Propriétés calculées pour les échelles D3
-const availableWidth = computed(() => chartWidth.value - props.options.margin.left - props.options.margin.right);
-
+// Les autres calculs (scales, margins, etc.) restent les mêmes.
 const xScale = computed(() => {
-  if (availableWidth.value <= 0 || !props.startDate || !props.endDate) return null;
-
+  if (!availableWidth.value || !props.startDate || !props.endDate) return null;
+  const start = new Date(props.startDate);
+  const end = new Date(props.endDate);
+  end.setDate(end.getDate() + 1);
   return d3.scaleTime()
-      .domain([new Date(props.startDate), new Date(props.endDate)])
-      .range([0, availableWidth.value]);
+      .domain([start, end])
+      .range([50, availableWidth.value - 20]);
 });
 
-// Fonction principale de rendu D3
+const yScale = computed(() => {
+  return d3.scaleBand()
+      .domain(props.tasks.map(t => t.name))
+      .range([40, availableHeight.value - 20])
+      .padding(0.2);
+});
+
+// Stocker temporairement la durée de la tâche pour le calcul après le drag
+let taskDurationMs = 0;
+let isDragging = false; // Indicateur pour distinguer drag et click/hover
+
 const renderChart = () => {
-  if (!ganttContainer.value || !props.tasks.length || !xScale.value) return;
+  if (!ganttContainer.value || !xScale.value || !yScale.value) return;
 
-  // Calculer la hauteur requise pour toutes les tâches
-  const requiredHeight = props.tasks.length * (props.options.barHeight + 15) + props.options.margin.top + props.options.margin.bottom + 20;
-  chartHeight.value = requiredHeight > 300 ? requiredHeight : 300; // Hauteur minimale
-
-  // Nettoyer le SVG précédent
   d3.select(ganttContainer.value).selectAll('*').remove();
 
-  // Créer le conteneur SVG principal
   const svg = d3.select(ganttContainer.value)
       .append('svg')
-      .attr('width', chartWidth.value)
-      .attr('height', chartHeight.value)
-      .append('g')
-      .attr('transform', `translate(${props.options.margin.left}, ${props.options.margin.top})`);
+      .attr('width', availableWidth.value)
+      .attr('height', availableHeight.value);
 
-  // Dessiner l'axe X (échelle de temps)
-  const xAxisGroup = svg.append("g")
-      .attr("transform", `translate(0, ${chartHeight.value - props.options.margin.top - props.options.margin.bottom})`)
-      .call(d3.axisBottom(xScale.value));
+  // 1. Définir le comportement de Drag
+  // IMPORTANT: Nous utilisons function(event, d) pour lier 'this' à l'élément DOM (le rect).
+  const dragHandler = d3.drag()
+      .on('start', function(event, d) { // Changé en function(event, d)
+        isDragging = false;
+        console.log("DRAG START: Tentative de glisser la tâche:", d.name);
 
-  // Styles Tailwind pour l'axe (simulés)
-  xAxisGroup.selectAll("path, line").attr("stroke", "#94a3b8");
-  xAxisGroup.selectAll("text").attr("fill", "#64748b");
+        // Cacher le tooltip (s'assure qu'il ne reste pas)
+        emit('task-hovered', { task: d, isHovering: false, x: 0, y: 0 });
 
-  // Dessiner les barres de tâches
-  props.tasks.forEach((task, index) => {
-    const barY = index * (props.options.barHeight + 15);
-    const barStart = xScale.value(new Date(task.start));
-    const barEnd = xScale.value(new Date(task.end));
+        const startDate = new Date(d.start);
+        const endDate = new Date(d.end);
+        taskDurationMs = endDate.getTime() - startDate.getTime();
 
-    // Barre de tâche
+        d3.select(this) // Utilisation de d3.select(this)
+            .style('filter', 'url(#glow)')
+            .style('cursor', 'grabbing'); // Changer le curseur pendant le drag
+      })
+      .on('drag', function(event, d) { // Changé en function(event, d)
+        // Confirmer qu'un glissement a eu lieu après un petit mouvement
+        if (Math.abs(event.dx) > 2 || Math.abs(event.dy) > 2) {
+          isDragging = true;
+        }
+
+        const newX = event.x;
+        // Déplacer visuellement la barre
+        d3.select(this).attr('x', newX); // Utilisation de d3.select(this) pour l'attribut 'x'
+        console.log(`DRAG: Position X: ${newX}`);
+      })
+      .on('end', function(event, d) { // Changé en function(event, d)
+        d3.select(this) // Utilisation de d3.select(this)
+            .style('filter', null)
+            .style('cursor', 'grab');
+
+        if (!isDragging) {
+          console.log("DRAG END: Non glissé (simple clic ou immobilité)");
+          return;
+        }
+
+        const newStartDate = xScale.value.invert(event.x);
+        const newEndDate = new Date(newStartDate.getTime() + taskDurationMs);
+
+        console.log(`DRAG END: Nouvelle date de début calculée: ${newStartDate}`);
+
+        // 4. Émettre l'événement pour la mise à jour de l'état du parent
+        emit('task-moved', {
+          id: d.id,
+          newStart: newStartDate.toISOString().split('T')[0],
+          newEnd: newEndDate.toISOString().split('T')[0]
+        });
+
+        isDragging = false;
+      });
+
+  // 2. Dessiner l'axe X (Dates)
+  const xAxis = d3.axisBottom(xScale.value)
+      .ticks(d3.timeWeek.every(1))
+      .tickFormat(d3.timeFormat("%b %d"));
+
+  svg.append('g')
+      .attr('transform', `translate(0, ${availableHeight.value - 20})`)
+      .call(xAxis)
+      .selectAll('text')
+      .attr('transform', 'rotate(-45)')
+      .style('text-anchor', 'end');
+
+  // 3. Dessiner l'axe Y (Noms des Tâches)
+  const yAxis = d3.axisLeft(yScale.value).tickSize(0);
+
+  svg.append('g')
+      .attr('transform', `translate(50, 0)`)
+      .call(yAxis)
+      .select('.domain').remove();
+
+  // 4. Définir un filtre pour l'effet de surbrillance pendant le drag
+  const defs = svg.append('defs');
+  defs.append('filter')
+      .attr('id', 'glow')
+      .append('feGaussianBlur')
+      .attr('stdDeviation', 2.5)
+      .attr('result', 'coloredBlur');
+  defs.select('#glow')
+      .append('feMerge')
+      .append('feMergeNode')
+      .attr('in', 'coloredBlur');
+  defs.select('#glow')
+      .select('feMerge')
+      .append('feMergeNode')
+      .attr('in', 'SourceGraphic');
+
+  // 5. Dessiner les barres de tâches
+  props.tasks.forEach((task) => {
+    const startX = xScale.value(new Date(task.start));
+    const endX = xScale.value(new Date(task.end));
+    const barWidth = endX - startX;
+    const barY = yScale.value(task.name);
+    const barHeight = yScale.value.bandwidth();
+
+    // Barre de tâche (élément <rect>)
     svg.append('rect')
-        .attr('x', barStart)
+        .datum(task)
+        .attr('x', startX)
         .attr('y', barY)
-        .attr('width', barEnd - barStart)
-        .attr('height', props.options.barHeight)
-        .attr('fill', task.color || '#4c7f9f')
-        .attr('rx', 6).attr('ry', 6)
-        .style('cursor', 'pointer')
-        .on('click', () => {
-          emit('task-selected', task);
-        })
-        // Nouveaux événements pour le survol
-        .on('mouseenter', (event) => {
-          const [mouseX, mouseY] = d3.pointer(event); // Coordonnées relatives au SVG
-          // Ajouter un effet visuel sur la barre (optionnel, mais recommandé)
+        .attr('width', barWidth > 0 ? barWidth : 0)
+        .attr('height', barHeight)
+        .attr('rx', 3)
+        .style('fill', task.color || '#4A90E2')
+        .style('opacity', 0.8)
+        .style('cursor', 'grab')
+        // Attacher le comportement de drag
+        .call(dragHandler)
+        // Événements de survol (mouseenter/mouseleave)
+        .on('mouseenter', (event, d) => {
+          if (isDragging) return;
+
+          const [mouseX] = d3.pointer(event);
           d3.select(event.currentTarget).style('opacity', 1.0);
           emit('task-hovered', {
-            task: task,
+            task: d,
             isHovering: true,
             x: mouseX,
-            y: barY // Utiliser la position Y de la barre pour un positionnement stable
+            y: barY
           });
         })
         .on('mouseleave', (event) => {
+          if (isDragging) return;
+
           d3.select(event.currentTarget).style('opacity', 0.8);
           emit('task-hovered', {
             task: task,
@@ -112,49 +182,38 @@ const renderChart = () => {
             y: 0
           });
         });
-
-    // Nom de la tâche (à gauche)
-    svg.append('text')
-        .attr('x', -10)
-        .attr('y', barY + props.options.barHeight / 2)
-        .attr('text-anchor', 'end')
-        .attr('dominant-baseline', 'middle')
-        .attr('fill', '#334155')
-        .style('font-weight', '600')
-        .style('font-size', '14px')
-        .text(task.name);
   });
 };
 
-// Logique de montage et redimensionnement
 onMounted(() => {
-  // Observer les changements de taille du conteneur parent
-  const resizeObserver = new ResizeObserver(entries => {
-    if (entries.length > 0) {
-      // Mettre à jour la largeur et re-rendre
-      chartWidth.value = entries[0].contentRect.width;
-      renderChart();
-    }
-  });
-
-  // Assurez-vous d'observer le parent du conteneur D3 pour obtenir la largeur réelle
-  if (ganttContainer.value && ganttContainer.value.parentElement) {
-    resizeObserver.observe(ganttContainer.value.parentElement);
-  }
+  renderChart();
+  window.addEventListener('resize', renderChart);
 });
 
-// Écouter les changements des props pour re-rendre
-watch([() => props.tasks, () => props.startDate, () => props.endDate], renderChart, { deep: true });
-
+watch([() => props.tasks, availableWidth], renderChart, { deep: true });
 </script>
 
 <template>
-  <div class="gantt-chart-wrapper w-full overflow-x-auto p-4 bg-white rounded-lg shadow-lg">
-    <!-- Le conteneur D3 est mis à jour dynamiquement -->
-    <div ref="ganttContainer" class="gantt-container" :style="{ minHeight: chartHeight + 'px' }">
-      <div v-if="!tasks || tasks.length === 0" class="text-center p-8 text-gray-500">
-        Aucune tâche à afficher.
-      </div>
-    </div>
+  <div ref="ganttContainer" class="gantt-chart-container">
+    <!-- Le graphique SVG sera injecté ici par D3 -->
   </div>
 </template>
+
+<style scoped>
+.gantt-chart-container {
+  width: 100%;
+  overflow-x: auto;
+  min-height: 200px;
+}
+:deep(svg text) {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+}
+:deep(svg .tick line) {
+  stroke: #ccc;
+  stroke-dasharray: 2,2;
+}
+:deep(svg .task-group rect) {
+  transition: opacity 0.2s ease;
+}
+</style>
