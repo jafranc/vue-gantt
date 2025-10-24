@@ -2,165 +2,81 @@
 import { ref, computed } from 'vue';
 import GanttChart from './components/GanttChart.vue';
 
-// --- Fonction de Calcul de Durée ---
-
-/**
- * Calcule la durée entre les dates de début et de fin d'une tâche.
- */
-function calculateDuration(task) {
-  const startDate = new Date(task.start);
-  const endDate = new Date(task.end);
-
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    return { days: 0, hours: 0, totalHours: 0 };
-  }
-
-  const diffMs = Math.abs(endDate.getTime() - startDate.getTime());
-  const totalHours = diffMs / (1000 * 60 * 60);
-  const totalDays = totalHours / 24;
-
-  const days = Math.floor(totalDays);
-  const hours = Math.round((totalDays - days) * 24);
-
-  return {
-    days: days,
-    hours: hours,
-    totalHours: parseFloat(totalHours.toFixed(2))
-  };
-}
-
-// --- Données d'état du Projet ---
-const projectStart = '2025-10-15';
-const projectEnd = '2025-12-30';
-
-// Liste réactive des tâches
+// --- 1. Déclaration de Données (Input Uniquement) ---
+// Ces données sont transmises au composant enfant qui gère les modifications en interne.
 const sampleTasks = ref([
-  { id: 1, name: 'Analyse des Besoins', start: '2025-10-20', end: '2125-10-30', category: 'Phase 1', progress: 100, color: '#FF7F50' },
-  { id: 2, name: 'Conception du Schéma', start: '2025-10-25', end: '2025-11-05', category: 'Phase 1', progress: 75, color: '#3CB371' },
-  { id: 3, name: 'Développement Backend', start: '2025-11-01', end: '2025-11-25', category: 'Phase 2', progress: 40, color: '#4682B4' },
-  { id: 4, name: 'Développement Frontend', start: '2025-11-10', end: '2025-12-05', category: 'Phase 2', progress: 10, color: '#DAA520' },
-  { id: 5, name: 'Tests et Recette', start: '2025-12-01', end: '2025-12-20', category: 'Phase 3', progress: 0, color: '#9370DB' },
+  { id: 1, name: 'Initialisation du projet', start: '2024-03-01', end: '2024-03-05', color: '#4A90E2' },
+  { id: 2, name: 'Analyse des besoins', start: '2024-03-04', end: '2024-03-12', color: '#F5A623' },
+  { id: 3, name: 'Conception de l\'architecture', start: '2024-03-13', end: '2024-03-25', color: '#7ED321' },
+  { id: 4, name: 'Développement du module A', start: '2024-03-26', end: '2024-04-05', color: '#BD10E0' },
+  { id: 5, name: 'Tests unitaires & intégration', start: '2024-04-06', end: '2024-04-10', color: '#50E3C2' },
+  { id: 6, name: 'Déploiement initial', start: '2024-04-11', end: '2024-04-15', color: '#9013FE' },
 ]);
 
-// --- Gestion des événements et de l'Infobulle (Tooltip) ---
-const hoveredTaskData = ref(null);
-const ganttRect = ref(null);
+const projectStart = '2024-03-01';
+const projectEnd = '2024-04-20';
 
-/**
- * Gère l'événement task-hovered émis par GanttChart.vue
- * @param {{ task: Object, isHovering: boolean, x: number, y: number }} data
- */
+// --- 2. Logique du Tooltip (Affichage, non modification) ---
+// Le tooltip est conservé ici pour pouvoir se superposer au GanttChart.
+const hoveredTask = ref(null);
+const tooltipPosition = ref({ x: 0, y: 0 });
+
 const handleTaskHover = (data) => {
   if (data.isHovering) {
-    // Stocke la tâche et les coordonnées X/Y relatives au SVG
-    hoveredTaskData.value = {
-      task: data.task,
-      x: data.x,
-      y: data.y
-    };
+    hoveredTask.value = data.task;
+    tooltipPosition.value = { x: data.x, y: data.y };
   } else {
-    hoveredTaskData.value = null;
+    hoveredTask.value = null;
   }
 };
 
-/**
- * Gère l'événement task-moved émis par GanttChart.vue après un drag
- * Met à jour les dates de la tâche dans l'état réactif (sampleTasks).
- * @param {{ id: number, newStart: string, newEnd: string }} movedTask
- */
-const handleTaskMoved = (movedTask) => {
-  const taskIndex = sampleTasks.value.findIndex(t => t.id === movedTask.id);
+const tooltipStyle = computed(() => ({
+  position: 'absolute',
+  left: `${tooltipPosition.value.x}px`,
+  top: `${tooltipPosition.value.y}px`,
+  // Légers décalages pour ne pas masquer le curseur
+  transform: 'translateY(-100%) translateX(-50%)',
+  pointerEvents: 'none',
+}));
 
-  if (taskIndex !== -1) {
-    // Créer une nouvelle copie de l'objet tâche
-    const updatedTask = {
-      ...sampleTasks.value[taskIndex],
-      start: movedTask.newStart,
-      end: movedTask.newEnd
-    };
+// Calcule la durée en jours entre deux dates (intervalle inclusif)
+const getDurationInDays = (start, end) => {
+  if (!start || !end) return 0;
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (startDate.getTime() > endDate.getTime()) return 0;
+  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+};
 
-    // Remplacer l'ancienne tâche dans l'array réactif
-    // La réactivité de Vue va déclencher le re-rendu dans GanttChart
-    sampleTasks.value[taskIndex] = updatedTask;
-
-    console.log(`Tâche ${movedTask.id} déplacée vers: ${movedTask.newStart} - ${movedTask.newEnd}`);
-  }
-}
-
-
-// Propriété calculée pour formater les données de l'infobulle
-const tooltipData = computed(() => {
-  if (!hoveredTaskData.value) return null;
-
-  const task = hoveredTaskData.value.task;
-  const duration = calculateDuration(task);
-
-  return {
-    name: task.name,
-    dates: `${task.start} à ${task.end}`,
-    duration: `${duration.days}j, ${duration.hours}h`,
-    category: task.category,
-    progress: task.progress ? `${task.progress}%` : '0%'
-  };
-});
-
-// Propriété calculée pour positionner l'infobulle
-const tooltipStyle = computed(() => {
-  if (!hoveredTaskData.value) return {};
-
-  // Marges définies dans GanttChart.vue pour les axes
-  const offsetX = 50;
-  const offsetY = 40;
-
-  // Position absolue dans #gantt-container, ajustée par les marges du SVG
-  return {
-    left: `${hoveredTaskData.value.x + offsetX + 15}px`,
-    top: `${hoveredTaskData.value.y + offsetY + 10}px`,
-    opacity: 1,
-    display: 'block',
-  };
-});
 </script>
 
 <template>
-  <div class="p-6 bg-gray-50 min-h-screen">
-    <h1 class="text-3xl font-bold mb-4 text-indigo-700">Vue 3 / D3 Gantt Chart</h1>
-    <p class="mb-4 text-gray-600">Cliquez sur une barre pour sélectionner une tâche. Survolez-la pour voir les détails (tooltip). **Glissez les barres pour les déplacer.**</p>
+  <div class="p-6 md:p-10 min-h-screen bg-gray-50 font-sans">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Tableau de Gantt Interactif</h1>
+    <div class="bg-white p-6 rounded-xl shadow-lg relative">
 
-    <!-- Conteneur principal du graphique de Gantt -->
-    <div ref="ganttRect" id="gantt-container" class="relative bg-white p-4 shadow-xl rounded-xl">
+      <!-- GanttChart Component: Reçoit les données et gère l'état et l'interaction -->
       <GanttChart
           :tasks="sampleTasks"
           :start-date="projectStart"
           :end-date="projectEnd"
           @task-hovered="handleTaskHover"
-          @task-moved="handleTaskMoved"
       />
 
-      <!-- TOOLTIP (Infobulle) -->
-      <div
-          v-if="tooltipData"
-          class="absolute z-10 p-3 text-xs bg-gray-800 text-white rounded-lg shadow-2xl transition-opacity duration-200 pointer-events-none"
-          :style="tooltipStyle"
-      >
-        <div class="font-bold mb-1">{{ tooltipData.name }}</div>
-        <div class="text-gray-400">Période: {{ tooltipData.dates }}</div>
-        <div class="text-gray-400">Durée: {{ tooltipData.duration }}</div>
-        <div class="text-gray-400">Progression: {{ tooltipData.progress }}</div>
+      <!-- Tooltip pour le survol -->
+      <div v-if="hoveredTask"
+           :style="tooltipStyle"
+           class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
+        <div class="font-bold mb-1">{{ hoveredTask.name }}</div>
+        <div>Début: {{ hoveredTask.start }}</div>
+        <div>Fin: {{ hoveredTask.end }}</div>
+        <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Assure le positionnement relatif pour l'absolu du tooltip */
-#gantt-container {
-  position: relative;
-  overflow: visible;
-}
-
-/* Styles de base pour le corps principal */
-body {
-  font-family: 'Inter', sans-serif;
-}
+/* Styles spécifiques pour App.vue (minimal) */
 </style>
