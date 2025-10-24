@@ -2,9 +2,9 @@
 import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
-// 1. Déclaration des événements émis (CORRECTION)
-// Cela permet à Vue de reconnaître officiellement les événements
-const emit = defineEmits(['task-hovered', 'task-moved']);
+// 1. Déclaration des événements émis
+// L'événement 'task-hovered' est retiré, car il est désormais géré en interne.
+const emit = defineEmits(['task-moved']);
 
 const props = defineProps({
   tasks: { type: Array, required: true },
@@ -21,6 +21,20 @@ const margin = { top: 40, right: 20, bottom: 30, left: 50 };
 const height = computed(() => localTasks.value.length * 40 + margin.top + margin.bottom);
 const isDragging = ref(false);
 const editingTask = ref(null);
+
+// --- Logique interne du Tooltip (NOUVEAU) ---
+const hoveredTask = ref(null);
+const tooltipPosition = ref({ x: 0, y: 0 });
+
+const tooltipStyle = computed(() => ({
+  position: 'absolute',
+  left: `${tooltipPosition.value.x}px`,
+  top: `${tooltipPosition.value.y}px`,
+  // Légers décalages pour ne pas masquer le curseur
+  transform: 'translateY(-100%) translateX(-50%)',
+  pointerEvents: 'none',
+}));
+
 
 // --- Fonctions utilitaires de Durée et de Date ---
 
@@ -119,6 +133,10 @@ watch(() => editingTask.value?.start, (newStart, oldStart) => {
   if (editingTask.value && newStart && newStart !== oldStart) {
     // Met à jour la date de fin et la durée
     editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
+  }
+  // Mettre à jour la date de fin
+  if (editingTask.value && newStart) {
+    editingTask.value.end = addDaysToDate(newStart, editingTask.value.durationDays);
   }
 });
 
@@ -237,14 +255,17 @@ const renderChart = () => {
         .attr('fill', task.color)
         .attr('rx', 4)
         .style('cursor', 'grab')
-        .on('mouseenter', (event) => {
+        .on('mouseenter', (event, d) => { // d est la donnée de la tâche
           const [x, y] = d3.pointer(event);
-          // Émet les coordonnées ajustées pour le tooltip parent
-          emit('task-hovered', { task: task, isHovering: true, x: x + margin.left, y: y + margin.top });
+          // Met à jour l'état interne pour le tooltip
+          hoveredTask.value = d;
+          // Calcule les coordonnées du tooltip
+          tooltipPosition.value = { x: x + margin.left, y: y + margin.top };
           d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
         })
         .on('mouseleave', (event) => {
-          emit('task-hovered', { task: task, isHovering: false });
+          // Masque le tooltip
+          hoveredTask.value = null;
           d3.select(event.currentTarget).style('filter', 'none');
         })
         .on('dblclick', function(event) {
@@ -295,6 +316,16 @@ watch(
   <div class="gantt-wrapper relative w-full">
     <div ref="ganttContainer" class="relative w-full overflow-x-auto">
       <!-- Le SVG du graphique sera rendu ici par D3 -->
+    </div>
+
+    <!-- Tooltip pour le survol (NOUVEAU: Géré en interne) -->
+    <div v-if="hoveredTask"
+         :style="tooltipStyle"
+         class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
+      <div class="font-bold mb-1">{{ hoveredTask.name }}</div>
+      <div>Début: {{ hoveredTask.start }}</div>
+      <div>Fin: {{ hoveredTask.end }}</div>
+      <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
     </div>
 
     <!-- Formulaire d'édition (maintenant à l'intérieur de gantt-wrapper) -->

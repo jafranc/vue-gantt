@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import GanttChart from './components/GanttChart.vue';
 
 // --- 1. Déclaration de Données (Input Uniquement) ---
@@ -16,38 +16,6 @@ const sampleTasks = ref([
 const projectStart = '2024-03-01';
 const projectEnd = '2024-04-20';
 
-// --- 2. Logique du Tooltip (Affichage, non modification) ---
-// Le tooltip est conservé ici pour pouvoir se superposer au GanttChart.
-const hoveredTask = ref(null);
-const tooltipPosition = ref({ x: 0, y: 0 });
-
-const handleTaskHover = (data) => {
-  if (data.isHovering) {
-    hoveredTask.value = data.task;
-    tooltipPosition.value = { x: data.x, y: data.y };
-  } else {
-    hoveredTask.value = null;
-  }
-};
-
-const tooltipStyle = computed(() => ({
-  position: 'absolute',
-  left: `${tooltipPosition.value.x}px`,
-  top: `${tooltipPosition.value.y}px`,
-  // Légers décalages pour ne pas masquer le curseur
-  transform: 'translateY(-100%) translateX(-50%)',
-  pointerEvents: 'none',
-}));
-
-// Calcule la durée en jours entre deux dates (intervalle inclusif)
-const getDurationInDays = (start, end) => {
-  if (!start || !end) return 0;
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (startDate.getTime() > endDate.getTime()) return 0;
-  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-};
 
 </script>
 
@@ -61,18 +29,9 @@ const getDurationInDays = (start, end) => {
           :tasks="sampleTasks"
           :start-date="projectStart"
           :end-date="projectEnd"
-          @task-hovered="handleTaskHover"
       />
 
-      <!-- Tooltip pour le survol -->
-      <div v-if="hoveredTask"
-           :style="tooltipStyle"
-           class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
-        <div class="font-bold mb-1">{{ hoveredTask.name }}</div>
-        <div>Début: {{ hoveredTask.start }}</div>
-        <div>Fin: {{ hoveredTask.end }}</div>
-        <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
-      </div>
+
     </div>
   </div>
 </template>
