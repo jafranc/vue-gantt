@@ -2,14 +2,13 @@
 import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
-// 1. Déclaration des événements émis
-// L'événement 'task-hovered' est retiré, car il est désormais géré en interne.
-const emit = defineEmits(['task-moved']);
+// CORRECTION: Changement de 'task-moved' à 'taskUpdated'
+const emit = defineEmits(['taskUpdated']);
 
 const props = defineProps({
-  tasks: { type: Array, required: true },
-  startDate: { type: String, required: true },
-  endDate: { type: String, required: true },
+  tasks: { type: Array, default: () => [] },
+  startDate: { type: String, default: '2012-12-12' },
+  endDate: { type: String, default: '2013-12-13' },
 });
 
 // L'état principal des tâches est conservé localement
@@ -18,11 +17,11 @@ const localTasks = ref([]);
 const ganttContainer = ref(null);
 const availableWidth = ref(0);
 const margin = { top: 40, right: 20, bottom: 30, left: 50 };
-const height = computed(() => localTasks.value.length * 40 + margin.top + margin.bottom);
+const height = computed(() => Math.max(150, localTasks.value.length * 40 + margin.top + margin.bottom));
 const isDragging = ref(false);
 const editingTask = ref(null);
 
-// --- Logique interne du Tooltip (NOUVEAU) ---
+// --- Logique interne du Tooltip ---
 const hoveredTask = ref(null);
 const tooltipPosition = ref({ x: 0, y: 0 });
 
@@ -37,7 +36,6 @@ const tooltipStyle = computed(() => ({
 
 
 // --- Fonctions utilitaires de Durée et de Date ---
-
 // Calcule la durée en jours entre deux dates (intervalle inclusif)
 const getDurationInDays = (start, end) => {
   if (!start || !end) return 0;
@@ -57,7 +55,6 @@ const addDaysToDate = (dateStr, days) => {
 };
 
 // --- Logique de Mise à Jour Interne (handleTaskMoved) ---
-// Cette fonction gère maintenant la mise à jour de localTasks
 const handleTaskMoved = (movedTask) => {
   const taskIndex = localTasks.value.findIndex(t => t.id === movedTask.id);
 
@@ -70,7 +67,13 @@ const handleTaskMoved = (movedTask) => {
 
     const newTasks = [...localTasks.value];
     newTasks[taskIndex] = updatedTask;
+
+    // 1. Mise à jour de l'état local pour le rendu D3
     localTasks.value = newTasks;
+
+    // 2. Émission de l'objet de tâche complet mis à jour
+    // CORRECTION: Utilisation de 'taskUpdated'
+    emit('taskUpdated', localTasks.value);
   }
 };
 
@@ -97,9 +100,14 @@ const editingFormStyle = computed(() => {
   };
 });
 
-const handleDblClick = (task, event) => {
-  // Éviter l'édition pendant le glissement ou si la tâche est déjà en cours d'édition
+const xScale = ref(null);
+const yScale = ref(null);
+
+const handleDblClick = (task) => {
   if (isDragging.value || editingTask.value) return;
+
+  // Assurez-vous que les échelles sont définies avant de calculer les positions
+  if (!xScale.value || !yScale.value) return;
 
   const xPos = xScale.value(new Date(task.start));
   const yPos = yScale.value(task.name);
@@ -134,7 +142,7 @@ watch(() => editingTask.value?.start, (newStart, oldStart) => {
     // Met à jour la date de fin et la durée
     editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
   }
-  // Mettre à jour la date de fin
+  // Mettre à jour la date de fin (nécessaire si seule la date de début est modifiée)
   if (editingTask.value && newStart) {
     editingTask.value.end = addDaysToDate(newStart, editingTask.value.durationDays);
   }
@@ -148,12 +156,12 @@ const saveDates = () => {
 
   if (newStart.getTime() >= newEnd.getTime()) {
     console.error("La date de début doit être strictement antérieure à la date de fin.");
-    // Utilisation d'une méthode de notification au lieu d'alert()
-    // Ceci est une implémentation simplifiée pour le Canvas:
+    // Remplacer l'alerte par une notification UI dans un vrai projet
     alert("Erreur: La date de début doit être antérieure à la date de fin.");
     return;
   }
 
+  // Le formulaire d'édition utilise handleTaskMoved, qui émettra la tâche mise à jour.
   handleTaskMoved({
     id,
     name,
@@ -165,9 +173,6 @@ const saveDates = () => {
 };
 
 // --- Échelles D3 ---
-const xScale = ref(null);
-const yScale = ref(null);
-
 const setupScales = (width) => {
   const start = new Date(props.startDate);
   const end = new Date(props.endDate);
@@ -177,14 +182,14 @@ const setupScales = (width) => {
       .range([0, width - margin.left - margin.right]);
 
   yScale.value = d3.scaleBand()
-      .domain(localTasks.value.map(t => t.name))
+      .domain(Array.isArray(localTasks.value) ? localTasks.value.map(t => t.name) : [])
       .range([0, localTasks.value.length * 40])
       .paddingInner(0.1);
 };
 
 // --- Rendu D3 ---
 const renderChart = () => {
-  if (!localTasks.value.length || !ganttContainer.value) return;
+  if (!ganttContainer.value) return;
 
   availableWidth.value = ganttContainer.value.clientWidth;
   const width = availableWidth.value;
@@ -201,12 +206,15 @@ const renderChart = () => {
   const g = svg.append('g')
       .attr('transform', `translate(${margin.left}, ${margin.top})`);
 
+  // Rendu des axes
   g.append('g')
-      .attr('transform', `translate(0, ${localTasks.value.length * 40})`)
+      .attr('transform', `translate(0, ${localTasks.value.length * 40 || 50})`)
       .call(d3.axisBottom(xScale.value));
 
   g.append('g')
       .call(d3.axisLeft(yScale.value));
+
+  if (!localTasks.value.length) return;
 
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
@@ -223,7 +231,6 @@ const renderChart = () => {
 
         if (isDragging.value) {
           const newStartDate = xScale.value.invert(event.x);
-          // Utilise la durée originale en millisecondes pour calculer la nouvelle fin
           const originalDuration = new Date(d.end).getTime() - new Date(d.start).getTime();
           const newEndDate = new Date(newStartDate.getTime() + originalDuration);
 
@@ -255,16 +262,13 @@ const renderChart = () => {
         .attr('fill', task.color)
         .attr('rx', 4)
         .style('cursor', 'grab')
-        .on('mouseenter', (event, d) => { // d est la donnée de la tâche
+        .on('mouseenter', (event, d) => {
           const [x, y] = d3.pointer(event);
-          // Met à jour l'état interne pour le tooltip
           hoveredTask.value = d;
-          // Calcule les coordonnées du tooltip
           tooltipPosition.value = { x: x + margin.left, y: y + margin.top };
           d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
         })
         .on('mouseleave', (event) => {
-          // Masque le tooltip
           hoveredTask.value = null;
           d3.select(event.currentTarget).style('filter', 'none');
         })
@@ -290,35 +294,36 @@ const renderChart = () => {
 // --- Hooks et Watchers ---
 
 watch(() => props.tasks, (newTasks) => {
-  localTasks.value = newTasks.map(t => ({ ...t }));
-  renderChart();
+  if (Array.isArray(newTasks)) {
+    localTasks.value = newTasks.map(t => ({ ...t }));
+    renderChart();
+  } else {
+    localTasks.value = [];
+    renderChart();
+  }
 }, { immediate: true, deep: true });
 
 onMounted(() => {
-  // Déclenche le rendu initial et le rendu au redimensionnement
   renderChart();
   window.addEventListener('resize', renderChart);
 });
 
-// WATCHER CORRIGÉ: Surveille la valeur du tableau local (après drag/édition)
-watch(
-    () => localTasks.value,
-    () => {
-      renderChart();
-    }
-    // Pas besoin de { deep: true } car nous remplaçons le tableau complet à chaque modification (handleTaskMoved)
-);
+watch(() => localTasks.value, renderChart, { deep: true });
 
 </script>
 
 <template>
-  <!-- 2. Encapsulation dans un seul <div> racine (CORRECTION) -->
   <div class="gantt-wrapper relative w-full">
     <div ref="ganttContainer" class="relative w-full overflow-x-auto">
       <!-- Le SVG du graphique sera rendu ici par D3 -->
     </div>
 
-    <!-- Tooltip pour le survol (NOUVEAU: Géré en interne) -->
+    <div>
+      <p>Debug::</p>
+      <p>{{localTasks}}</p>
+    </div>
+
+    <!-- Tooltip pour le survol (Géré en interne) -->
     <div v-if="hoveredTask"
          :style="tooltipStyle"
          class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
@@ -328,7 +333,7 @@ watch(
       <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
     </div>
 
-    <!-- Formulaire d'édition (maintenant à l'intérieur de gantt-wrapper) -->
+    <!-- Formulaire d'édition -->
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
@@ -380,6 +385,9 @@ watch(
 }
 .gantt-edit-form {
   box-sizing: border-box;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.95);
+}
+.g text {
+  font-size: 10px;
 }
 </style>
