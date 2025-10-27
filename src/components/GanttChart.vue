@@ -365,12 +365,11 @@ watch(() => localTasks.value, renderChart, { deep: true });
             <span class="text-xs font-bold text-blue-600">
                 Durée effective: {{ displayDurationInDays }} j.
             </span>
+      </div>
         <button @click="saveDates"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1 px-3 rounded-md transition duration-150">
+                class="bg-blue-600 hover:bg-blue-700 text-gray-500 text-xs font-bold py-1 px-3 rounded-md transition duration-150">
           Valider
         </button>
-      </div>
-
       <button @click="editingTask = null" class="absolute top-1 right-1 text-gray-500 hover:text-gray-800 text-xs">
         &times;
       </button>
