@@ -11,12 +11,27 @@ const props = defineProps({
   tasks: { type: Array, default: () => [] },
   startDate: { type: String, default: '2012-12-12' },
   endDate: { type: String, default: '2013-12-13' },
-  // Catégorie de filtre sélectionnée
-  filterCategory: { type: String, default: 'All' },
+  // NOTE: La prop filterCategory a été supprimée, le filtre est maintenant interne.
 });
 
-// L'état principal des tâches est conservé localement
+// --- État Interne pour le Filtrage ---
 const localTasks = ref([]);
+const selectedCategory = ref('All'); // Nouvelle variable d'état interne pour le filtre
+
+// --- Calcul des Catégories Uniques pour le sélecteur ---
+const availableCategories = computed(() => {
+  const categories = new Set(['All']); // 'All' est toujours disponible
+
+  // Assurez-vous d'utiliser localTasks.value qui est la source de vérité
+  localTasks.value.forEach(t => {
+    if (t.category && t.category.trim()) {
+      categories.add(t.category);
+    }
+  });
+  // Retourne un tableau trié
+  return Array.from(categories).sort();
+});
+
 
 const ganttContainer = ref(null);
 const availableWidth = ref(0);
@@ -24,18 +39,17 @@ const margin = { top: 40, right: 20, bottom: 30, left: 50 };
 const isDragging = ref(false); // Glissement horizontal (date)
 const editingTask = ref(null);
 
-// --- Logique interne du Tooltip ---
-const hoveredTask = ref(null);
-const tooltipPosition = ref({ x: 0, y: 0 });
+// --- Logique interne du Tooltip (SUPPRIMÉE) ---
+// const hoveredTask = ref(null);
+// const tooltipPosition = ref({ x: 0, y: 0 });
 
-const tooltipStyle = computed(() => ({
-  position: 'absolute',
-  left: `${tooltipPosition.value.x}px`,
-  top: `${tooltipPosition.value.y}px`,
-  // Légers décalages pour ne pas masquer le curseur
-  transform: 'translateY(-100%) translateX(-50%)',
-  pointerEvents: 'none',
-}));
+// const tooltipStyle = computed(() => ({
+//   position: 'absolute',
+//   left: `${tooltipPosition.value.x}px`,
+//   top: `${tooltipPosition.value.y}px`,
+//   transform: 'translateY(-100%) translateX(-50%)',
+//   pointerEvents: 'none',
+// }));
 
 
 // --- Fonctions utilitaires de Durée et de Date ---
@@ -62,11 +76,12 @@ const formatDate = (date) => date.toISOString().split('T')[0];
 
 // --- CALCUL DES TÂCHES FILTRÉES ---
 const filteredTasks = computed(() => {
-  if (props.filterCategory === 'All') {
+  // Utilise l'état interne selectedCategory
+  if (selectedCategory.value === 'All') {
     return localTasks.value;
   }
   // Filtrage basé sur la propriété 'category' de la tâche
-  return localTasks.value.filter(t => t.category === props.filterCategory);
+  return localTasks.value.filter(t => t.category === selectedCategory.value);
 });
 
 // La hauteur dépend maintenant du nombre de tâches FILTRÉES
@@ -103,7 +118,8 @@ const addTask = () => {
   let newTask;
 
   if (localTasks.value.length > 0) {
-    const lastTask = localTasks.value.find(t => t.id === maxId);
+    // Trouver la dernière tâche pour copier le style et la durée
+    const lastTask = localTasks.value[localTasks.value.length - 1];
 
     const durationMs = new Date(lastTask.end).getTime() - new Date(lastTask.start).getTime();
 
@@ -144,7 +160,7 @@ const addTask = () => {
   localTasks.value.push(newTask);
 
   // Émettre le tableau complet mis à jour pour le parent
-  emit('taskUpdated', localTasks.value);
+  emit('updateTasksOrder', localTasks.value);
 };
 
 const removeLastTask = () => {
@@ -158,7 +174,7 @@ const removeLastTask = () => {
   localTasks.value = newTasks;
 
   // Émettre le tableau complet mis à jour pour le parent
-  emit('taskUpdated', localTasks.value);
+  emit('updateTasksOrder', localTasks.value);
 }
 
 // --- Logique de Mise à Jour Interne (handleTaskMoved) ---
@@ -168,9 +184,12 @@ const handleTaskMoved = (movedTask) => {
   if (taskIndex !== -1) {
     const updatedTask = {
       ...localTasks.value[taskIndex],
-      name: movedTask.newName,
       start: movedTask.newStart,
       end: movedTask.newEnd,
+      // Le formulaire d'édition pourrait ne pas exposer toutes les propriétés,
+      // il est plus sûr d'utiliser la valeur actuelle pour la catégorie si elle existe
+      category: localTasks.value[taskIndex].category,
+      name: movedTask.name || localTasks.value[taskIndex].name,
     };
 
     const newTasks = [...localTasks.value];
@@ -192,15 +211,22 @@ const displayDurationInDays = computed(() => {
   return getDurationInDays(editingTask.value.start, editingTask.value.end);
 });
 
+// MODIFICATION ICI: Centrer le formulaire horizontalement dans le conteneur du graphique
 const editingFormStyle = computed(() => {
-  if (!editingTask.value || !editingTask.value.x || !editingTask.value.y) return {};
+  if (!editingTask.value || !editingTask.value.y || !ganttContainer.value) return {};
 
-  const xOffset = margin.left;
+  // Le centre horizontal est le milieu de la largeur disponible (disponibleWidth.value)
+  // availableWidth.value est la largeur du conteneur D3 moins la marge de gauche/droite
+  // On utilise la largeur totale du conteneur (ganttContainer.value.clientWidth)
+  const containerWidth = ganttContainer.value.clientWidth;
 
   return {
     position: 'absolute',
-    left: `${editingTask.value.x + xOffset}px`,
+    // Centre horizontal du conteneur (décalage de 50% du formulaire via transform)
+    left: `${containerWidth / 2}px`,
+    // Position verticale basée sur la tâche, ajustée par la marge du haut
     top: `${editingTask.value.y + margin.top + 5}px`,
+    // Centrer le formulaire sur le point 'left'
     transform: 'translateX(-50%)',
     zIndex: 30,
     minWidth: '320px',
@@ -210,7 +236,7 @@ const editingFormStyle = computed(() => {
 const xScale = ref(null);
 const yScale = ref(null);
 
-// NOUVELLE FONCTION: handleContextMenu (remplace handleDblClick)
+// NOUVELLE FONCTION: handleContextMenu
 const handleContextMenu = (task) => {
   // Annuler tout état de glissement possible
   isDragging.value = false;
@@ -223,6 +249,7 @@ const handleContextMenu = (task) => {
   // Assurez-vous que les échelles sont définies avant de calculer les positions
   if (!xScale.value || !yScale.value) return;
 
+  // XPos est seulement nécessaire pour l'ancienne approche, mais on le laisse pour référence
   const xPos = xScale.value(new Date(task.start));
   const yPos = yScale.value(task.name);
 
@@ -235,8 +262,10 @@ const handleContextMenu = (task) => {
     start: task.start,
     end: task.end,
     durationDays: getDurationInDays(task.start, task.end),
-    x: xPos,
+    x: xPos, // x est conservé mais n'est plus utilisé pour le positionnement du formulaire
     y: yPos,
+    category: task.category || 'Uncategorized', // Ajout de la catégorie
+    color: task.color,
   };
 
   nextTick(() => {
@@ -247,13 +276,6 @@ const handleContextMenu = (task) => {
     }
   });
 };
-
-watch(() => editingTask.value?.name, (newName, oldName) => {
-  if (editingTask.value && newName && newName !== oldName) {
-    editingTask.value.name = newName;
-    // console.log(`changed name from ${oldName} to ${newName}`)
-  }
-});
 
 watch(() => editingTask.value?.durationDays, (newDuration, oldDuration) => {
   if (editingTask.value && newDuration && newDuration !== oldDuration) {
@@ -273,25 +295,35 @@ watch(() => editingTask.value?.start, (newStart, oldStart) => {
 });
 
 const saveDates = () => {
-  const { id, name, start, end } = editingTask.value;
+  const { id, name, start, end, category, color } = editingTask.value;
 
   const newStart = new Date(start);
   const newEnd = new Date(end);
 
   if (newStart.getTime() >= newEnd.getTime()) {
     console.error("La date de début doit être strictement antérieure à la date de fin.");
-    // Utiliser un message box ou un toast au lieu d'alert()
     console.warn("Erreur: La date de début doit être antérieure à la date de fin. Opération annulée.");
     return;
   }
 
-  // Le formulaire d'édition utilise handleTaskMoved, qui émettra la tâche mise à jour.
-  handleTaskMoved({
-    id,
-    newName: name,
-    newStart: start,
-    newEnd: end,
-  });
+  const taskIndex = localTasks.value.findIndex(t => t.id === id);
+
+  if (taskIndex !== -1) {
+    const updatedTask = {
+      ...localTasks.value[taskIndex],
+      name,
+      start,
+      end,
+      category,
+      color, // Mise à jour de la couleur
+    };
+
+    const newTasks = [...localTasks.value];
+    newTasks[taskIndex] = updatedTask;
+
+    localTasks.value = newTasks;
+    emit('taskUpdated', localTasks.value);
+  }
 
   editingTask.value = null;
 };
@@ -349,13 +381,13 @@ const renderChart = () => {
   let initialX, initialY;
   let originalTaskIndex = -1; // Index dans le tableau FILTRÉ
   const rowHeight = yScale.value.step(); // Hauteur d'une ligne
-  const isFilterActive = props.filterCategory !== 'All'; // Condition de filtre
+  // La condition de filtre est basée sur l'état interne
+  const isFilterActive = selectedCategory.value !== 'All';
 
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
         // Empêcher le glissement si le formulaire d'édition est visible
         if (editingTask.value) {
-          // S'assurer que le glissement est ignoré et que le curseur n'est pas "grabbing"
           d3.select(this).style('cursor', 'pointer');
           event.sourceEvent.stopPropagation();
           return;
@@ -439,8 +471,6 @@ const renderChart = () => {
             const [movedTask] = newTasksArray.splice(globalIndexToMove, 1);
 
             // 2. Insérer la tâche (avec son ID d'origine) à l'emplacement de l'ID cible
-            // On insère *avant* l'élément cible, sauf si on déplace vers le bas et que l'index cible a été décalé.
-            // Une simple insertion à l'index global cible est le plus sûr.
             newTasksArray.splice(globalTargetIndex, 0, movedTask);
 
             // 3. Mettre à jour l'état local et émettre le tableau complet
@@ -464,7 +494,7 @@ const renderChart = () => {
 
           handleTaskMoved({
             id: d.id,
-            newName: d.name,
+            name: d.name,
             newStart: newStartFormatted,
             newEnd: newEndFormatted,
           });
@@ -509,16 +539,17 @@ const renderChart = () => {
         .attr('fill', task.color)
         .attr('rx', 4)
         .style('cursor', 'grab')
-        .on('mouseenter', (event, d) => {
-          const [x, y] = d3.pointer(event);
-          hoveredTask.value = d;
-          tooltipPosition.value = { x: x + margin.left, y: y + margin.top };
-          d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
-        })
-        .on('mouseleave', (event) => {
-          hoveredTask.value = null;
-          d3.select(event.currentTarget).style('filter', 'none');
-        });
+    // SUPPRESSION DES GESTIONNAIRES DE SURVOL (TOOLTIP)
+    // .on('mouseenter', (event, d) => {
+    //     const [x, y] = d3.pointer(event);
+    //     hoveredTask.value = d;
+    //     tooltipPosition.value = { x: x + margin.left, y: y + margin.top };
+    //     d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
+    // })
+    // .on('mouseleave', (event) => {
+    //     hoveredTask.value = null;
+    //     d3.select(event.currentTarget).style('filter', 'none');
+    // });
 
     dragHandler(taskGroup); // Appliquer le drag au groupe
 
@@ -552,7 +583,7 @@ watch(() => props.tasks, (newTasks) => {
     const currentIds = localTasks.value.map(t => t.id).join(',');
     const newIds = newTasks.map(t => t.id).join(',');
 
-    // Test simple pour voir si l'ordre ou le nombre d'éléments a changé
+    // Si l'ordre ou le nombre d'éléments a changé (y compris les mises à jour venant du parent)
     if (currentIds !== newIds || newTasks.length !== localTasks.value.length) {
       localTasks.value = newTasks.map(t => ({ ...t }));
       renderChart();
@@ -572,23 +603,35 @@ onMounted(() => {
   window.addEventListener('resize', renderChart);
 });
 
-// Watch the local tasks, the effective dates, AND the filterCategory to re-render the chart
-watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props.filterCategory], renderChart, { deep: true });
+// Watch the local tasks, the effective dates, AND the internal selectedCategory to re-render the chart
+watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCategory], renderChart, { deep: true });
 </script>
 
 <template>
   <div class="gantt-wrapper relative w-full">
 
-    <!-- ZONE DES BOUTONS D'ACTION (Ajouter/Supprimer) -->
-    <div class="absolute top-0 right-0 z-10 flex space-x-2 mr-2">
-      <!-- Bouton Ajouter (Plus) -->
+    <!-- Zone de contrôle des tâches et du filtre -->
+    <div class="absolute top-0 right-0 z-10 flex space-x-4 items-center mr-2">
+
+      <!-- SÉLECTEUR DE FILTRE DE CATÉGORIE -->
+      <div class="flex items-center space-x-2">
+        <label for="categoryFilter" class="text-sm font-medium text-gray-700">Filtrer par:</label>
+        <select id="categoryFilter"
+                v-model="selectedCategory"
+                class="p-1 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+          <option v-for="category in availableCategories" :key="category" :value="category">
+            {{ category }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Boutons d'Action (Ajouter/Supprimer) -->
       <button @click="addTask"
               class="bg-green-500 hover:bg-green-600 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
               title="Ajouter une nouvelle tâche (copie de la dernière)">
         +
       </button>
 
-      <!-- Bouton Supprimer (Moins) - Supprime la tâche avec l'ID max -->
       <button @click="removeLastTask"
               :disabled="localTasks.length === 0"
               class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
@@ -600,7 +643,15 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
     <div ref="ganttContainer" class="relative w-full overflow-x-auto">
       <!-- Le SVG du graphique sera rendu ici par D3 -->
       <div v-if="filteredTasks.length === 0 && localTasks.length > 0" class="absolute inset-0 flex items-center justify-center bg-gray-50/50 z-20">
-        <p class="text-xl font-semibold text-gray-600 p-4 bg-white rounded-lg shadow-lg">Aucune tâche ne correspond au filtre sélectionné.</p>
+        <p class="text-xl font-semibold text-gray-600 p-4 bg-white rounded-lg shadow-lg">
+          Aucune tâche ne correspond au filtre '{{ selectedCategory }}'.
+        </p>
+      </div>
+      <!-- Si le tableau local est complètement vide -->
+      <div v-else-if="localTasks.length === 0" class="absolute inset-0 flex items-center justify-center bg-gray-50/50 z-20">
+        <p class="text-xl font-semibold text-gray-600 p-4 bg-white rounded-lg shadow-lg">
+          Le tableau de tâches est vide. Utilisez '+' pour commencer !
+        </p>
       </div>
     </div>
 
@@ -611,34 +662,42 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
         {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}
       </p>
       <p class="text-xs text-blue-500 font-medium">
-        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. **Glissez verticalement** pour réordonner.)
+        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
       </p>
     </div>
 
-    <!-- Tooltip pour le survol (Géré en interne) -->
-<!--    <div v-if="hoveredTask"-->
-<!--         :style="tooltipStyle"-->
-<!--         class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">-->
-<!--      <div class="font-bold mb-1">{{ hoveredTask.name }}</div>-->
-<!--      <div>Catégorie: {{ hoveredTask.category || 'N/A' }}</div>-->
-<!--      <div>Début: {{ hoveredTask.start }}</div>-->
-<!--      <div>Fin: {{ hoveredTask.end }}</div>-->
-<!--      <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>-->
-<!--    </div>-->
+    <!-- Tooltip pour le survol (SUPPRIMÉ) -->
+    <!-- <div v-if="hoveredTask" ...></div> -->
 
     <!-- Formulaire d'édition -->
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
-      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer: {{ editingTask.name }}</div>
-<!--      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer: {{ editingTask.name }}</div>-->
+      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer</div>
 
       <label class="text-xs font-medium text-gray-600">
         Nom:
         <input type="text"
-               v-model.trim="editingTask.name"
+               v-model="editingTask.name"
                class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
       </label>
+
+      <label class="text-xs font-medium text-gray-600">
+        Catégorie:
+        <input type="text"
+               v-model="editingTask.category"
+               class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+      </label>
+
+      <label class="text-xs font-medium text-gray-600">
+        Couleur:
+        <input type="color"
+               v-model="editingTask.color"
+               class="mt-1 h-8 border rounded-md w-full focus:ring-blue-500 focus:border-blue-500" />
+      </label>
+
+
+      <hr class="border-gray-200 my-1">
 
       <label class="text-xs font-medium text-gray-600">
         Durée (jours):
@@ -647,8 +706,6 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
                min="1"
                class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
       </label>
-
-      <hr class="border-gray-200 my-1">
 
       <label class="text-xs font-medium text-gray-600">
         Début:
