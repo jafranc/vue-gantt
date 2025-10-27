@@ -14,16 +14,16 @@ const tasks = ref([
 
 // --- HANDLERS POUR L'AJOUT/SUPPRESSION DE TÂCHES ---
 
-const handleAddTask = () => {
-  // 3. Ajouter la nouvelle tâche au tableau
-  console.log(`Tâche ajoutée avec ID`);
-};
-
-const handleDeleteTask = (taskIdToRemove) => {
-  // Filtrer le tableau pour retirer la tâche avec l'ID spécifié
-  tasks.value = tasks.value.filter(t => t.id !== taskIdToRemove);
-  console.log(`Tâche supprimée avec ID: ${taskIdToRemove}`);
-};
+// const handleAddTask = () => {
+//   // 3. Ajouter la nouvelle tâche au tableau
+//   console.log(`Tâche ajoutée avec ID`);
+// };
+//
+// const handleDeleteTask = (taskIdToRemove) => {
+//   // Filtrer le tableau pour retirer la tâche avec l'ID spécifié
+//   tasks.value = tasks.value.filter(t => t.id !== taskIdToRemove);
+//   console.log(`Tâche supprimée avec ID: ${taskIdToRemove}`);
+// };
 
 // ... existing state and watch logic ...
 </script>
@@ -34,7 +34,7 @@ const handleDeleteTask = (taskIdToRemove) => {
         v-model:tasks="tasks"
         :startDate="projectStart"
         :endDate="projectEnd"
-        @addTask="handleAddTask"       @deleteTask="handleDeleteTask" class="bg-white p-4 shadow-lg rounded-lg relative"
+        class="bg-white p-4 shadow-lg rounded-lg relative"
     />
 
   </div>

@@ -3,7 +3,7 @@ import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
 // CORRECTION: Changement de 'task-moved' à 'taskUpdated'
-const emit = defineEmits(['taskUpdated','addTask','deleteTask']);
+const emit = defineEmits(['taskUpdated']);
 
 const props = defineProps({
   // tasks is the primary data source
@@ -397,7 +397,7 @@ const addTask = () => {
   console.log(`Tâche ajoutée avec ID: ${newId}. Copie de la dernière tâche.`);
 
 
-  emit('addTask');
+  emit('taskUpdated');
 };
 
 const removeLastTask = () => {
@@ -405,7 +405,7 @@ const removeLastTask = () => {
 
   // Pour cet exemple simple, nous supprimons la tâche la plus récente (celle avec l'ID max).
   const maxId = Math.max(...localTasks.value.map(t => t.id));
-  emit('deleteTask', maxId);
+  emit('taskUpdated');
 }
 
 // Watch the local tasks and the effective dates to re-render the chart
