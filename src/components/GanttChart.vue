@@ -87,6 +87,7 @@ const handleTaskMoved = (movedTask) => {
   if (taskIndex !== -1) {
     const updatedTask = {
       ...localTasks.value[taskIndex],
+      name: movedTask.newName,
       start: movedTask.newStart,
       end: movedTask.newEnd,
     };
@@ -157,6 +158,13 @@ const handleDblClick = (task) => {
   });
 };
 
+watch(() => editingTask.value?.name, (newName, oldName) => {
+  if (editingTask.value && newName && newName !== oldName) {
+    editingTask.value.name = newName;
+    // console.log(`changed name from ${oldName} to ${newName}`)
+  }
+});
+
 watch(() => editingTask.value?.durationDays, (newDuration, oldDuration) => {
   if (editingTask.value && newDuration && newDuration !== oldDuration) {
     editingTask.value.end = addDaysToDate(editingTask.value.start, newDuration);
@@ -190,7 +198,7 @@ const saveDates = () => {
   // Le formulaire d'édition utilise handleTaskMoved, qui émettra la tâche mise à jour.
   handleTaskMoved({
     id,
-    name,
+    newName: name,
     newStart: start,
     newEnd: end,
   });
@@ -442,7 +450,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate], renderChar
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
-      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer: {{ editingTask.name }}</div>
+<!--      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer: {{ editingTask.name }}</div>-->
+
+      <label class="text-xs font-medium text-gray-600">
+        Nom:
+        <input type="text"
+               v-model.trim="editingTask.name"
+               class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+      </label>
 
       <label class="text-xs font-medium text-gray-600">
         Durée (jours):

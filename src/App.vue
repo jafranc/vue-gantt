@@ -15,31 +15,8 @@ const tasks = ref([
 // --- HANDLERS POUR L'AJOUT/SUPPRESSION DE TÂCHES ---
 
 const handleAddTask = () => {
-  // 1. Déterminer le prochain ID disponible
-  const maxId = tasks.value.length > 0 ? Math.max(...tasks.value.map(t => t.id)) : 0;
-  const newId = maxId + 1;
-
-  // 2. Définir des dates initiales pour la nouvelle tâche (ex: un jour après la fin du projet)
-  const defaultStart = new Date(projectEnd.value);
-  defaultStart.setDate(defaultStart.getDate() + 1); // Start 1 day after the current end
-
-  const defaultEnd = new Date(defaultStart);
-  defaultEnd.setDate(defaultEnd.getDate() + 5); // Default duration of 5 days
-
-  const formatDate = (date) => date.toISOString().split('T')[0];
-
-  const newTask = {
-    id: newId,
-    name: `Nouvelle Tâche ${newId}`,
-    start: formatDate(defaultStart),
-    end: formatDate(defaultEnd),
-    color: `#${Math.floor(Math.random()*16777215).toString(16)}`, // Random color
-    isNew: true,
-  };
-
   // 3. Ajouter la nouvelle tâche au tableau
-  tasks.value.push(newTask);
-  console.log(`Tâche ajoutée avec ID: ${newId}`);
+  console.log(`Tâche ajoutée avec ID`);
 };
 
 const handleDeleteTask = (taskIdToRemove) => {
