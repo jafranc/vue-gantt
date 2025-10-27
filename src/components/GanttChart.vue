@@ -2,7 +2,9 @@
 import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
-const emit = defineEmits(['taskUpdated']);
+// L'événement taskUpdated est utilisé pour les changements de dates/contenu
+// L'événement updateTasksOrder est utilisé pour la réorganisation verticale
+const emit = defineEmits(['taskUpdated', 'updateTasksOrder']);
 
 const props = defineProps({
   // tasks is the primary data source
@@ -110,13 +112,15 @@ const addTask = () => {
 
     const newEnd = new Date(newStart.getTime() + durationMs);
 
+    // Assurez-vous que la nouvelle tâche hérite des propriétés importantes mais pas de l'ID
     newTask = {
-      ...lastTask,
+      // L'ID est garanti d'être unique (maxId + 1)
       id: newId,
       name: `Tâche Copiée ${newId}`,
       start: formatDate(newStart),
       end: formatDate(newEnd),
-      category: lastTask.category || 'Uncategorized', // Assure qu'une catégorie est présente
+      color: lastTask.color || '#4F46E5', // Hériter de la couleur
+      category: lastTask.category || 'Uncategorized',
       isNew: true,
     };
   } else {
@@ -176,8 +180,7 @@ const handleTaskMoved = (movedTask) => {
     localTasks.value = newTasks;
 
     // 2. Émission de l'objet de tâche complet mis à jour
-    // Notons que nous émettons l'array complet, même pour un simple changement de date,
-    // pour que le parent ait la source de vérité à jour.
+    // taskUpdated est utilisé pour les changements de date/contenu
     emit('taskUpdated', localTasks.value);
   }
 };
@@ -411,42 +414,45 @@ const renderChart = () => {
             .attr('transform', null); // Retirer la transformation de glissement
 
         if (isReordering && !isFilterActive) {
-          // --- Logique de Réorganisation Verticale (Non Filtrée) ---
-          const finalY = yScale.value(d.name) + (event.y - initialY); // Position Y finale du centre de la barre
+          // --- Logique de Réorganisation Verticale (Corrigée) ---
+
+          // Calcul de l'index de ligne cible dans le domaine Y D3
+          const finalY = yScale.value(d.name) + (event.y - initialY);
           const newRowIndex = Math.round(finalY / rowHeight);
 
-          // Assurer que l'index reste dans les limites du tableau filtered/local (qui sont les mêmes ici)
-          const newIndex = Math.max(0, Math.min(filteredTasks.value.length - 1, newRowIndex));
-          console.log(`Moved ${d.name} from id ${originalTaskIndex} to ${newIndex}`);
-          if (newIndex !== originalTaskIndex) {
-            // 1. Cloner et déplacer la tâche dans le tableau local (qui est le même que filteredTasks ici)
-            // On doit utiliser localTasks pour spliter car c'est la source de vérité pour l'émission.
+          // Assurer que l'index reste dans les limites (index dans le tableau filteredTasks)
+          const newFilteredIndex = Math.max(0, Math.min(filteredTasks.value.length - 1, newRowIndex));
+
+          if (newFilteredIndex !== originalTaskIndex) {
+
+            // Trouver les IDs pour la manipulation dans le tableau local (source de vérité)
+            const taskIdToMove = filteredTasks.value[originalTaskIndex].id;
+            const globalIndexToMove = localTasks.value.findIndex(t => t.id === taskIdToMove);
+
+            // L'ID cible est celui qui se trouve à la nouvelle position dans le tableau FILTRÉ
+            const targetTaskId = filteredTasks.value[newFilteredIndex].id;
+            const globalTargetIndex = localTasks.value.findIndex(t => t.id === targetTaskId);
+
             const newTasksArray = [...localTasks.value];
 
-            // Trouver l'index dans le tableau complet (localTasks)
-            const currentIdOrder = localTasks.value.map(t => t.id);
-            const filteredIdOrder = filteredTasks.value.map(t => t.id);
-
-            const taskId = filteredTasks.value[originalTaskIndex].id;
-            const globalIndexToMove = currentIdOrder.indexOf(taskId);
-
-            // Trouver le nouvel ID cible dans le tableau filtered à la nouvelle position
-            const targetTaskId = filteredIdOrder[newIndex];
-            const globalTargetIndex = currentIdOrder.indexOf(targetTaskId);
-
+            // 1. Extraire la tâche de son emplacement d'origine
             const [movedTask] = newTasksArray.splice(globalIndexToMove, 1);
-            // Insérer la tâche déplacée à la nouvelle position cible (qui est l'index global)
-            newTasksArray.splice(globalTargetIndex > globalIndexToMove ? globalTargetIndex : globalTargetIndex, 0, movedTask);
 
-            // 2. Mettre à jour l'état local et émettre le tableau complet
+            // 2. Insérer la tâche (avec son ID d'origine) à l'emplacement de l'ID cible
+            // On insère *avant* l'élément cible, sauf si on déplace vers le bas et que l'index cible a été décalé.
+            // Une simple insertion à l'index global cible est le plus sûr.
+            newTasksArray.splice(globalTargetIndex, 0, movedTask);
+
+            // 3. Mettre à jour l'état local et émettre le tableau complet
             localTasks.value = newTasksArray;
-            emit('taskUpdated', localTasks.value); // Émettre la nouvelle structure
+            // updateTasksOrder est émis pour signaler un changement d'ordre
+            emit('updateTasksOrder', localTasks.value);
           } else {
             // Si aucune réorganisation effective, forcer le re-rendu pour remettre la barre en place
             renderChart();
           }
         } else if (isDragging.value) {
-          // --- Logique de Changement de Date Horizontale (Corrigée) ---
+          // --- Logique de Changement de Date Horizontale ---
           const finalBarX = xScale.value(new Date(d.start)) + (event.x - initialX);
 
           const newStartDate = xScale.value.invert(finalBarX);
@@ -458,7 +464,7 @@ const renderChart = () => {
 
           handleTaskMoved({
             id: d.id,
-            name: d.name,
+            newName: d.name,
             newStart: newStartFormatted,
             newEnd: newEndFormatted,
           });
@@ -546,6 +552,7 @@ watch(() => props.tasks, (newTasks) => {
     const currentIds = localTasks.value.map(t => t.id).join(',');
     const newIds = newTasks.map(t => t.id).join(',');
 
+    // Test simple pour voir si l'ordre ou le nombre d'éléments a changé
     if (currentIds !== newIds || newTasks.length !== localTasks.value.length) {
       localTasks.value = newTasks.map(t => ({ ...t }));
       renderChart();
@@ -604,7 +611,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
         {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}
       </p>
       <p class="text-xs text-blue-500 font-medium">
-        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer.)
+        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. **Glissez verticalement** pour réordonner.)
       </p>
     </div>
 
