@@ -3,7 +3,7 @@ import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
 // CORRECTION: Changement de 'task-moved' à 'taskUpdated'
-const emit = defineEmits(['taskUpdated']);
+const emit = defineEmits(['taskUpdated','addTask','deleteTask']);
 
 const props = defineProps({
   // tasks is the primary data source
@@ -47,6 +47,8 @@ const getDurationInDays = (start, end) => {
   const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
+
+const formatDate = (date) => date.toISOString().split('T')[0];
 
 // Ajoute un certain nombre de jours à une date (soustrait 1 jour pour l'intervalle inclusif)
 const addDaysToDate = (dateStr, days) => {
@@ -333,6 +335,71 @@ onMounted(() => {
   window.addEventListener('resize', renderChart);
 });
 
+const addTask = () => {
+  // Émet un événement pour que le parent crée une nouvelle tâche
+  // Le parent doit gérer l'attribution d'un nouvel ID et des dates initiales.
+  // 1. Déterminer le prochain ID disponible (maxId + 1)
+  const maxId = localTasks.value.length > 0 ? Math.max(...localTasks.value.map(t => t.id)) : 0;
+  const newId = maxId + 1;
+
+  let newTask;
+
+  if (localTasks.value.length > 0) {
+    // Trouver la tâche avec l'ID max (la plus récente ou la plus haute ID)
+    const lastTask = localTasks.value.find(t => t.id === maxId);
+
+    // Calculer la durée de la dernière tâche en millisecondes
+    const durationMs = new Date(lastTask.end).getTime() - new Date(lastTask.start).getTime();
+
+    // Début de la nouvelle tâche: 1 jour après la fin de la dernière tâche
+    const newStart = new Date(lastTask.end);
+    newStart.setDate(newStart.getDate() + 1);
+
+    // Fin de la nouvelle tâche: Début + durée de l'ancienne tâche
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    // Cloner la dernière tâche et mettre à jour les propriétés
+    newTask = {
+      ...lastTask,
+      id: newId,
+      name: `Tâche Copiée ${newId}`,
+      start: formatDate(newStart),
+      end: formatDate(newEnd),
+      // La couleur et isNew sont copiés, mais on pourrait changer la couleur ici si désiré
+      isNew: true, // Marquer comme nouveau
+    };
+  } else {
+    // Cas par défaut si aucune tâche n'existe
+    const defaultStart = new Date();
+    const defaultEnd = new Date();
+    defaultEnd.setDate(defaultEnd.getDate() + 10);
+
+    newTask = {
+      id: newId,
+      name: `Première Tâche ${newId}`,
+      start: formatDate(defaultStart),
+      end: formatDate(defaultEnd),
+      color: '#4F46E5',
+      isNew: true,
+    };
+  }
+
+  // Ajouter la nouvelle tâche au tableau
+  localTasks.value.push(newTask);
+  console.log(`Tâche ajoutée avec ID: ${newId}. Copie de la dernière tâche.`);
+
+
+  emit('addTask');
+};
+
+const removeLastTask = () => {
+  if (localTasks.value.length === 0) return;
+
+  // Pour cet exemple simple, nous supprimons la tâche la plus récente (celle avec l'ID max).
+  const maxId = Math.max(...localTasks.value.map(t => t.id));
+  emit('deleteTask', maxId);
+}
+
 // Watch the local tasks and the effective dates to re-render the chart
 watch([() => localTasks.value, effectiveStartDate, effectiveEndDate], renderChart, { deep: true });
 
@@ -346,6 +413,21 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate], renderChar
     <div>
       <p>Debug (Dates calculées):</p>
       <p>Début: {{ d3.timeFormat('%Y-%m-%d')(effectiveStartDate) }} | Fin: {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}</p>
+    </div>
+
+    <div class="absolute top-0 right-0 z-10 flex space-x-2 mr-2">
+      <button @click="addTask"
+              class="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              title="Ajouter une nouvelle tâche">
+        +
+      </button>
+
+      <button @click="removeLastTask"
+              :disabled="localTasks.length === 0"
+              class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              title="Supprimer la dernière tâche (ID max)">
+        &minus;
+      </button>
     </div>
 
     <div v-if="hoveredTask"
