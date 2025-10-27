@@ -583,7 +583,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
     <div class="absolute top-0 right-0 z-10 flex space-x-2 mr-2">
       <!-- Bouton Ajouter (Plus) -->
       <button @click="addTask"
-              class="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              class="bg-green-500 hover:bg-green-600 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
               title="Ajouter une nouvelle tâche (copie de la dernière)">
         +
       </button>
@@ -591,7 +591,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
       <!-- Bouton Supprimer (Moins) - Supprime la tâche avec l'ID max -->
       <button @click="removeLastTask"
               :disabled="localTasks.length === 0"
-              class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
               title="Supprimer la dernière tâche (ID max)">
         &minus;
       </button>
