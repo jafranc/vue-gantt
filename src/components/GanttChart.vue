@@ -6,7 +6,9 @@ import * as d3 from 'd3';
 const emit = defineEmits(['taskUpdated']);
 
 const props = defineProps({
+  // tasks is the primary data source
   tasks: { type: Array, default: () => [] },
+  // These props are now effectively ignored for scale calculation, but kept for interface consistency
   startDate: { type: String, default: '2012-12-12' },
   endDate: { type: String, default: '2013-12-13' },
 });
@@ -53,6 +55,28 @@ const addDaysToDate = (dateStr, days) => {
   date.setDate(date.getDate() + days - 1);
   return d3.timeFormat('%Y-%m-%d')(date);
 };
+
+// --- CALCUL DES ÉCHELLES DYNAMIQUES ---
+// Calcule la date de début la plus précoce parmi toutes les tâches
+const effectiveStartDate = computed(() => {
+  if (localTasks.value.length === 0) return new Date(props.startDate); // Fallback to prop default
+
+  const dates = localTasks.value.map(t => new Date(t.start));
+  return new Date(Math.min(...dates));
+});
+
+// Calcule la date de fin la plus tardive parmi toutes les tâches, avec un tampon
+const effectiveEndDate = computed(() => {
+  if (localTasks.value.length === 0) return new Date(props.endDate); // Fallback to prop default
+
+  const dates = localTasks.value.map(t => new Date(t.end));
+  const maxDate = new Date(Math.max(...dates));
+
+  // Ajout d'un tampon (par exemple, 10 jours) pour l'espace visuel
+  maxDate.setDate(maxDate.getDate() + 10);
+
+  return maxDate;
+});
 
 // --- Logique de Mise à Jour Interne (handleTaskMoved) ---
 const handleTaskMoved = (movedTask) => {
@@ -174,8 +198,9 @@ const saveDates = () => {
 
 // --- Échelles D3 ---
 const setupScales = (width) => {
-  const start = new Date(props.startDate);
-  const end = new Date(props.endDate);
+  // Utilisation des dates effectives calculées
+  const start = effectiveStartDate.value;
+  const end = effectiveEndDate.value;
 
   xScale.value = d3.scaleTime()
       .domain([start, end])
@@ -308,22 +333,21 @@ onMounted(() => {
   window.addEventListener('resize', renderChart);
 });
 
-watch(() => localTasks.value, renderChart, { deep: true });
+// Watch the local tasks and the effective dates to re-render the chart
+watch([() => localTasks.value, effectiveStartDate, effectiveEndDate], renderChart, { deep: true });
 
 </script>
 
 <template>
   <div class="gantt-wrapper relative w-full">
     <div ref="ganttContainer" class="relative w-full overflow-x-auto">
-      <!-- Le SVG du graphique sera rendu ici par D3 -->
     </div>
 
     <div>
-      <p>Debug::</p>
-      <p>{{localTasks}}</p>
+      <p>Debug (Dates calculées):</p>
+      <p>Début: {{ d3.timeFormat('%Y-%m-%d')(effectiveStartDate) }} | Fin: {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}</p>
     </div>
 
-    <!-- Tooltip pour le survol (Géré en interne) -->
     <div v-if="hoveredTask"
          :style="tooltipStyle"
          class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
@@ -333,7 +357,6 @@ watch(() => localTasks.value, renderChart, { deep: true });
       <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
     </div>
 
-    <!-- Formulaire d'édition -->
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
@@ -366,10 +389,11 @@ watch(() => localTasks.value, renderChart, { deep: true });
                 Durée effective: {{ displayDurationInDays }} j.
             </span>
       </div>
-        <button @click="saveDates"
-                class="bg-blue-600 hover:bg-blue-700 text-gray-500 text-xs font-bold py-1 px-3 rounded-md transition duration-150">
-          Valider
-        </button>
+
+      <button @click="saveDates"
+              class="bg-blue-600 hover:bg-blue-700 text-gray-500 text-xs font-bold py-1 px-3 rounded-md transition duration-150">
+        Valider
+      </button>
       <button @click="editingTask = null" class="absolute top-1 right-1 text-gray-500 hover:text-gray-800 text-xs">
         &times;
       </button>
