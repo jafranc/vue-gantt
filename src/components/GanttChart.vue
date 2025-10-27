@@ -616,15 +616,15 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, () => props
     </div>
 
     <!-- Tooltip pour le survol (Géré en interne) -->
-    <div v-if="hoveredTask"
-         :style="tooltipStyle"
-         class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">
-      <div class="font-bold mb-1">{{ hoveredTask.name }}</div>
-      <div>Catégorie: {{ hoveredTask.category || 'N/A' }}</div>
-      <div>Début: {{ hoveredTask.start }}</div>
-      <div>Fin: {{ hoveredTask.end }}</div>
-      <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>
-    </div>
+<!--    <div v-if="hoveredTask"-->
+<!--         :style="tooltipStyle"-->
+<!--         class="bg-gray-800 text-white text-xs p-2 rounded-lg shadow-xl opacity-90 transition duration-150 z-40">-->
+<!--      <div class="font-bold mb-1">{{ hoveredTask.name }}</div>-->
+<!--      <div>Catégorie: {{ hoveredTask.category || 'N/A' }}</div>-->
+<!--      <div>Début: {{ hoveredTask.start }}</div>-->
+<!--      <div>Fin: {{ hoveredTask.end }}</div>-->
+<!--      <div class="mt-1 font-medium">Durée: {{ getDurationInDays(hoveredTask.start, hoveredTask.end) }} jours</div>-->
+<!--    </div>-->
 
     <!-- Formulaire d'édition -->
     <div v-if="editingTask"
