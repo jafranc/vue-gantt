@@ -223,6 +223,7 @@ const setupScales = (width) => {
 };
 
 // --- Rendu D3 ---
+// --- Rendu D3 avec Drag-Reorder ---
 const renderChart = () => {
   if (!ganttContainer.value) return;
 
@@ -246,26 +247,81 @@ const renderChart = () => {
       .attr('transform', `translate(0, ${localTasks.value.length * 40 || 50})`)
       .call(d3.axisBottom(xScale.value));
 
+  // L'axe Y utilise le domaine actuel de localTasks.value
   g.append('g')
+      .attr('class', 'y-axis-g')
       .call(d3.axisLeft(yScale.value));
 
   if (!localTasks.value.length) return;
 
+  // Variables pour le glissement vertical/horizontal
+  let isReordering = false;
+  let initialX, initialY;
+  let originalTaskIndex = -1;
+  const rowHeight = yScale.value.step(); // Hauteur d'une ligne
+
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
         isDragging.value = false;
-        d3.select(this).raise().classed('dragging', true);
+        isReordering = false;
+        initialX = event.x;
+        initialY = event.y;
+        originalTaskIndex = localTasks.value.findIndex(t => t.id === d.id);
+
+        d3.select(this)
+            .raise()
+            .classed('dragging', true)
+            .style('cursor', 'grabbing');
       })
       .on('drag', function(event, d) {
-        isDragging.value = true;
-        const newX = event.x;
-        d3.select(this).attr('x', newX);
+        const dx = event.x - initialX;
+        const dy = event.y - initialY;
+
+        // Déterminer le mode de glissement (date ou réorganisation)
+        if (Math.abs(dy) > 5) { // Déplacement vertical significatif (réorganisation)
+          isReordering = true;
+          // Déplacer la barre verticalement pour l'effet de réorganisation
+          d3.select(this)
+              .attr('transform', `translate(0, ${dy})`);
+
+        } else if (Math.abs(dx) > 5 && !isReordering) { // Déplacement horizontal (changement de date)
+          isDragging.value = true;
+          // Déplacer la barre horizontalement
+          d3.select(this).select('rect').attr('x', initialX + dx);
+          d3.select(this).attr('transform', null); // S'assurer que la translation Y est désactivée
+        }
       })
       .on('end', function(event, d) {
-        d3.select(this).classed('dragging', false);
+        d3.select(this)
+            .classed('dragging', false)
+            .style('cursor', 'grab')
+            .attr('transform', null); // Retirer la transformation de glissement
 
-        if (isDragging.value) {
-          const newStartDate = xScale.value.invert(event.x);
+        if (isReordering) {
+          // --- Logique de Réorganisation Verticale ---
+          const finalY = yScale.value(d.name) + (event.y - initialY); // Position Y finale du centre de la barre
+          const newRowIndex = Math.round(finalY / rowHeight);
+
+          // Assurer que l'index reste dans les limites
+          const newIndex = Math.max(0, Math.min(localTasks.value.length - 1, newRowIndex));
+          console.log(`Moved ${d.name} from id ${originalTaskIndex} to ${newIndex}`);
+          if (newIndex !== originalTaskIndex) {
+            // 1. Cloner et déplacer la tâche dans le tableau local
+            const newTasksArray = [...localTasks.value];
+            const [movedTask] = newTasksArray.splice(originalTaskIndex, 1);
+            newTasksArray.splice(newIndex, 0, movedTask);
+
+            // 2. Mettre à jour l'état local et émettre le tableau complet
+            localTasks.value = newTasksArray;
+            emit('taskUpdated', localTasks.value); // Émettre la nouvelle structure
+          } else {
+            // Si aucune réorganisation effective, forcer le re-rendu pour remettre la barre en place
+            renderChart();
+          }
+        } else if (isDragging.value) {
+          // --- Logique de Changement de Date Horizontale ---
+          const finalX = d3.select(this).select('rect').attr('x');
+          const newStartDate = xScale.value.invert(finalX);
           const originalDuration = new Date(d.end).getTime() - new Date(d.start).getTime();
           const newEndDate = new Date(newStartDate.getTime() + originalDuration);
 
@@ -279,17 +335,27 @@ const renderChart = () => {
             newEnd: newEndFormatted,
           });
         }
+
         isDragging.value = false;
+        isReordering = false;
       });
 
   localTasks.value.forEach((task) => {
     const xStart = xScale.value(new Date(task.start));
     const xEnd = xScale.value(new Date(task.end));
     const width = xEnd - xStart;
+    // La position Y est calculée à l'intérieur du groupe 'g', basé sur la position dans le domaine Y
     const yPos = yScale.value(task.name);
 
-    const rect = g.append('rect')
+    // Créer un groupe pour la tâche pour appliquer la transformation de réorganisation
+    const taskGroup = g.append('g')
         .datum(task)
+        .attr('class', 'task-group')
+        .on('dblclick', function(event) {
+          handleDblClick(task, event);
+        });
+
+    const rect = taskGroup.append('rect')
         .attr('x', xStart)
         .attr('y', yPos)
         .attr('width', width)
@@ -306,26 +372,19 @@ const renderChart = () => {
         .on('mouseleave', (event) => {
           hoveredTask.value = null;
           d3.select(event.currentTarget).style('filter', 'none');
-        })
-        .on('dblclick', function(event) {
-          handleDblClick(task, event);
         });
 
-    dragHandler(rect);
+    dragHandler(taskGroup); // Appliquer le drag au groupe
+
+    taskGroup.append("text")
+        .text(d => d.name)
+        .attr("x", xStart + 5)
+        .attr("y", yPos + yScale.value.bandwidth() / 2 + 5)
+        .attr("fill", "black")
+        .style("pointer-events", "none")
+        .style("font-size", "12px");
   });
-
-  g.selectAll(".task-label")
-      .data(localTasks.value)
-      .enter()
-      .append("text")
-      .text(d => d.name)
-      .attr("x", d => xScale.value(new Date(d.start)) + 5)
-      .attr("y", d => yScale.value(d.name) + yScale.value.bandwidth() / 2 + 5)
-      .attr("fill", "black")
-      .style("pointer-events", "none")
-      .style("font-size", "12px");
 };
-
 // --- Hooks et Watchers ---
 
 watch(() => props.tasks, (newTasks) => {
