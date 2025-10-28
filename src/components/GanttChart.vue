@@ -106,12 +106,15 @@ const editingTask = ref(null);
 
 // --- Fonctions utilitaires de Durée et de Date ---
 const getDurationInDays = (start, end) => {
-  if (!start || !end) return 0;
+  if (!start || !end) return 1;
   const startDate = new Date(start);
   const endDate = new Date(end);
-  if (startDate.getTime() > endDate.getTime()) return 0;
-  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  // if (startDate.getTime() > endDate.getTime()) return 0;
+  const diffTime = endDate.getTime() - startDate.getTime();
+  if (diffTime<0) return 1;
+  const durationInDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  return Math.max(1,durationInDays);
 };
 
 // Détermine la durée réelle en jours pour une tâche (utilisé pour la médiane)
@@ -314,17 +317,25 @@ const handleContextMenu = (task) => {
 };
 
 watch(() => editingTask.value?.durationDays, (newDuration, oldDuration) => {
-  if (editingTask.value && newDuration && newDuration !== oldDuration) {
-    editingTask.value.end = addDaysToDate(editingTask.value.start, newDuration);
+  if (editingTask.value && newDuration) {
+    if (newDuration !== oldDuration) {
+      editingTask.value.end = addDaysToDate(editingTask.value.start, newDuration);
+    }
+    // S'assurer que la durée est au moins 1
+    const safeDuration = Math.max(1, newDuration);
+    editingTask.value.durationDays = safeDuration; // Force la valeur dans le modèle si < 1
+
+    // Si la durée a été changée, on ajuste la date de fin
+    editingTask.value.end = addDaysToDate(editingTask.value.start, safeDuration);
   }
 });
 
 watch(() => editingTask.value?.start, (newStart, oldStart) => {
-  if (editingTask.value && newStart && newStart !== oldStart) {
-    editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
-  }
-  if (editingTask.value && newStart) {
-    editingTask.value.end = addDaysToDate(newStart, editingTask.value.durationDays);
+  if (editingTask.value && newStart){
+    editingTask.value.end = addDaysToDate(newStart, Math.max(1,editingTask.value.durationDays));
+    if(newStart !== oldStart) {
+      editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
+    }
   }
 });
 
@@ -353,9 +364,17 @@ const saveDates = () => {
   const newStart = new Date(start);
   const newEnd = new Date(end);
 
+  // if (newStart.getTime() >= newEnd.getTime()) {
+  //   console.error("La date de début doit être strictement antérieure à la date de fin.");
+  //   console.warn("Erreur: La date de début doit être antérieure à la date de fin. Opération annulée.");
+  //   return;
+
+  // Vérification ajustée (Line 377):
   if (newStart.getTime() >= newEnd.getTime()) {
-    console.error("La date de début doit être strictement antérieure à la date de fin.");
-    console.warn("Erreur: La date de début doit être antérieure à la date de fin. Opération annulée.");
+    console.error("La tâche doit avoir une durée d'au moins un jour (date de début < date de fin).");
+    console.warn("Erreur: La date de début doit être strictement antérieure à la date de fin pour garantir une durée positive. Opération annulée.");
+    // On ne fait rien de plus ici; les watchers devraient avoir empêché cela.
+    // Si elle atteint ici, c'est une manipulation manuelle, et on annule.
     return;
   }
 
