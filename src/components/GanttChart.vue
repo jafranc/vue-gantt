@@ -158,6 +158,32 @@ const effectiveEndDate = computed(() => {
   return maxDate;
 });
 
+// --- NOUVELLE FONCTION: Réordonner par date de début ---
+const reorderTasksByStartDate = () => {
+  // Créer une copie du tableau local pour le tri
+  const sortedTasks = [...localTasks.value];
+
+  sortedTasks.sort((a, b) => {
+    // Convertir les chaînes de date en objets Date pour la comparaison
+    const dateA = new Date(a.start);
+    const dateB = new Date(b.start);
+
+    // Tri ascendant (le plus ancien d'abord)
+    if (dateA < dateB) return -1;
+    if (dateA > dateB) return 1;
+
+    // En cas d'égalité, trier par ID pour un ordre stable
+    return a.id - b.id;
+  });
+
+  // Mettre à jour l'état local avec le nouvel ordre
+  localTasks.value = sortedTasks;
+
+  // Émettre l'événement pour que le composant parent (App.vue) mette à jour sa source de vérité
+  emit('updateTasksOrder', localTasks.value);
+};
+
+
 // --- FONCTIONS D'AJOUT/SUPPRESSION DE TÂCHES ---
 const addTask = () => {
   const maxId = localTasks.value.length > 0 ? Math.max(...localTasks.value.map(t => t.id)) : 0;
@@ -259,11 +285,19 @@ const editingFormStyle = computed(() => {
   if (!editingTask.value || !ganttContainer.value) return {};
 
   // Calculer yPos basé sur la tâche d'origine dans localTasks (non filtré)
-  const task = localTasks.value.find(t => t.id === editingTask.value.id);
+  // ATTENTION: La position Y du formulaire doit être calculée sur les tâches *filtrées* si un filtre est actif
 
-  if (!task || !yScale.value) return {};
+  // 1. Trouver le nom de la tâche à éditer
+  const editingTaskName = editingTask.value.name;
 
-  const yPos = yScale.value(task.name) || 0; // Utiliser yScale pour trouver la position verticale
+  // 2. Trouver la position Y dans l'échelle filtrée
+  const yPos = yScale.value(editingTaskName);
+
+  if (yPos === undefined || yPos === null) {
+    // Si la tâche n'est pas dans le filtre actuel, on ne montre pas le formulaire, ou on le met au début
+    return { display: 'none' };
+  }
+
   const containerWidth = ganttContainer.value.clientWidth;
 
   return {
@@ -274,7 +308,7 @@ const editingFormStyle = computed(() => {
     top: `${yPos + margin.top + 5}px`,
     // Centrer le formulaire sur le point 'left'
     transform: 'translateX(-50%)',
-    zIndex: 30,
+    zIndex: 50,
     minWidth: '320px',
   };
 });
@@ -537,6 +571,7 @@ const renderChart = () => {
     // NOUVEAU: Récupérer la couleur de la catégorie
     const barColor = getCategoryColor(task.category || 'Uncategorized');
 
+
     const taskGroup = g.append('g')
         .datum(task)
         .attr('class', 'task-group')
@@ -615,7 +650,6 @@ onMounted(() => {
 });
 
 // Watch the local tasks, the effective dates, AND the internal selectedCategory to re-render the chart
-// Retrait de 'uniqueCategories' de ce watcher, car il est un Computed qui dépend déjà de localTasks
 watch([localTasks, effectiveStartDate, effectiveEndDate, selectedCategory], renderChart, { deep: true });
 </script>
 
@@ -623,7 +657,14 @@ watch([localTasks, effectiveStartDate, effectiveEndDate, selectedCategory], rend
   <div class="gantt-wrapper relative w-full">
 
     <!-- Zone de contrôle des tâches et du filtre -->
-    <div class="absolute top-0 right-0 z-10 flex space-x-4 items-center mr-2">
+    <div class="absolute top-0 right-0 z-10 flex space-x-2 items-center mr-2">
+
+      <!-- NOUVEAU: Bouton d'Actualisation/Tri -->
+      <button @click="reorderTasksByStartDate"
+              class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-md shadow-lg transition duration-150 text-sm flex items-center space-x-1"
+              title="Trier les tâches par date de début">
+        <span>Ordre par date</span>
+      </button>
 
       <!-- SÉLECTEUR DE FILTRE DE CATÉGORIE -->
       <div class="flex items-center space-x-2">
