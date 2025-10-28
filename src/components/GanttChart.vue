@@ -15,18 +15,34 @@ const props = defineProps({
 
 // --- État Interne pour le Filtrage ---
 const localTasks = ref([]);
-const selectedCategory = ref('All'); // Nouvelle variable d'état interne pour le filtre
+const selectedCategory = ref('All');
 
 // --- VARIABLES POUR L'AUTO-ATTRIBUTION DE COULEURS ---
-// Palette de couleurs pour les catégories
-const COLOR_PALETTE = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#6366F1', '#EC4899', '#06B6D4']; // Indigo, Green, Amber, Red, etc.
-// Carte réactive pour stocker la couleur attribuée à chaque catégorie
+const COLOR_PALETTE = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#6366F1', '#EC4899', '#06B6D4'];
 const categoryColorMap = ref({});
+
+// --- CONSTANTES ET ÉTAT POUR LE TIME-FOLDING ---
+const FOLD_MULTIPLIER = 5; // Tâche est un "whale" si sa durée est > 5 * durée médiane
+const FOLD_COMPRESSION_FACTOR = 0.2; // La durée excédentaire est affichée à 20% de sa taille réelle
+
+/**
+ * Calcule la médiane d'un tableau de nombres.
+ */
+const calculateMedian = (arr) => {
+  if (arr.length === 0) return 1;
+
+  const sorted = [...arr].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  } else {
+    return sorted[middle];
+  }
+};
 
 /**
  * Fonction pour initialiser ou mettre à jour la carte de couleurs des catégories.
- * Elle est appelée à chaque chargement de données ou modification de catégorie.
- * @param {Array} tasks - Le tableau de tâches (localTasks.value).
  */
 const initializeColorMap = (tasks) => {
   const allCategories = new Set();
@@ -39,9 +55,7 @@ const initializeColorMap = (tasks) => {
   let newMap = { ...categoryColorMap.value };
   let colorIndex = 0;
 
-  // Assigner une couleur aux catégories en utilisant la palette
   allCategories.forEach(cat => {
-    // Si la catégorie n'est pas encore dans la carte, lui assigner la prochaine couleur
     if (!newMap[cat]) {
       let color = COLOR_PALETTE[colorIndex % COLOR_PALETTE.length];
       newMap[cat] = color;
@@ -54,8 +68,6 @@ const initializeColorMap = (tasks) => {
 
 /**
  * Récupère la couleur pour une catégorie donnée à partir de la carte.
- * @param {string} category - Le nom de la catégorie.
- * @returns {string} Le code couleur hexadécimal ou un gris par défaut.
  */
 const getCategoryColor = (category) => {
   if (!category || category === 'Uncategorized') return '#9CA3AF'; // Gris par défaut
@@ -64,9 +76,8 @@ const getCategoryColor = (category) => {
 
 
 // --- ÉTAT D'ÉDITION ET CATÉGORIE ---
-const newCategoryInput = ref(false); // État pour montrer/cacher l'input 'Nouvelle Catégorie'
+const newCategoryInput = ref(false);
 
-// Calcul des catégories uniques (sans 'All') pour le formulaire d'édition
 const uniqueExistingCategories = computed(() => {
   const categories = new Set();
   localTasks.value.forEach(t => {
@@ -74,14 +85,11 @@ const uniqueExistingCategories = computed(() => {
       categories.add(t.category);
     }
   });
-  // Retourne un tableau trié, utile pour le select
   return Array.from(categories).sort();
 });
 
-// Calcul des Catégories Uniques pour le sélecteur de filtre
 const availableCategories = computed(() => {
-  const categories = new Set(['All']); // 'All' est toujours disponible
-
+  const categories = new Set(['All']);
   localTasks.value.forEach(t => {
     if (t.category && t.category.trim()) {
       categories.add(t.category);
@@ -95,7 +103,7 @@ const ganttContainer = ref(null);
 const availableWidth = ref(0);
 const margin = { top: 40, right: 20, bottom: 30, left: 50 };
 const isDragging = ref(false);
-const editingTask = ref(null); // L'objet d'édition n'a PAS de membre `color`
+const editingTask = ref(null);
 
 // --- Fonctions utilitaires de Durée et de Date ---
 const getDurationInDays = (start, end) => {
@@ -106,6 +114,20 @@ const getDurationInDays = (start, end) => {
   const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
+
+// Détermine la durée réelle en jours pour une tâche (utilisé pour la médiane)
+const getTaskDuration = (task) => getDurationInDays(task.start, task.end);
+
+// Calcul de la durée **médiane** des tâches
+const medianTaskDuration = computed(() => {
+  if (localTasks.value.length === 0) return 1;
+
+  const durations = localTasks.value
+      .filter(t => t.start && t.end)
+      .map(getTaskDuration);
+
+  return Math.max(1, calculateMedian(durations));
+});
 
 const addDaysToDate = (dateStr, days) => {
   if (!dateStr || days <= 0) return dateStr;
@@ -182,7 +204,6 @@ const addTask = () => {
 
   localTasks.value.push(newTask);
 
-  // Mettre à jour la carte de couleur si une nouvelle catégorie est introduite
   initializeColorMap(localTasks.value);
 
   emit('updateTasksOrder', localTasks.value);
@@ -211,7 +232,6 @@ const refreshSorting = () => {
   emit('updateTasksOrder', localTasks.value);
 };
 
-// --- Logique de Mise à Jour Interne (handleTaskMoved) ---
 const handleTaskMoved = (movedTask) => {
   const taskIndex = localTasks.value.findIndex(t => t.id === movedTask.id);
 
@@ -233,7 +253,6 @@ const handleTaskMoved = (movedTask) => {
 };
 
 
-// --- Fonctions d'édition/Glissement ---
 const displayDurationInDays = computed(() => {
   if (!editingTask.value) return 0;
   return getDurationInDays(editingTask.value.start, editingTask.value.end);
@@ -257,7 +276,6 @@ const editingFormStyle = computed(() => {
 const xScale = ref(null);
 const yScale = ref(null);
 
-// NOUVELLE FONCTION: handleContextMenu
 const handleContextMenu = (task) => {
   isDragging.value = false;
 
@@ -320,7 +338,6 @@ const saveDates = () => {
   let { category } = editingTask.value;
   let newCategory = category;
 
-  // 1. Gérer la saisie de nouvelle catégorie
   if (newCategoryInput.value && editingTask.value.newCategory) {
     const newCat = editingTask.value.newCategory.trim();
     if (newCat) {
@@ -328,11 +345,9 @@ const saveDates = () => {
     }
   }
 
-  // 2. Mettre à jour la carte de couleur si une nouvelle catégorie est introduite
   if (newCategory !== originalTask.category) {
     initializeColorMap(localTasks.value.concat([{ category: newCategory }]));
   }
-  // La couleur est désormais dérivée, pas stockée.
 
   newCategoryInput.value = false;
 
@@ -377,7 +392,7 @@ const setupScales = (width) => {
       .paddingInner(0.1);
 };
 
-// --- Rendu D3 avec Drag-Reorder ---
+// --- Rendu D3 avec Drag-Reorder et Time-Folding ---
 const renderChart = () => {
   if (!ganttContainer.value) return;
 
@@ -407,7 +422,13 @@ const renderChart = () => {
 
   if (!filteredTasks.value.length) return;
 
-  // Variables pour le glissement vertical/horizontal
+  // UTILISATION DE LA MÉDIANE
+  const medianDuration = medianTaskDuration.value;
+  const threshold = medianDuration * FOLD_MULTIPLIER;
+
+  const oneDayAfterStart = d3.timeDay.offset(effectiveStartDate.value, 1);
+  const oneDayInPixels = xScale.value(oneDayAfterStart) - xScale.value(effectiveStartDate.value);
+
   let isReordering = false;
   let initialX, initialY;
   let originalTaskIndex = -1;
@@ -514,9 +535,27 @@ const renderChart = () => {
   // Itérer sur filteredTasks pour le rendu
   filteredTasks.value.forEach((task) => {
     const xStart = xScale.value(new Date(task.start));
-    const xEnd = xScale.value(new Date(task.end));
-    const width = xEnd - xStart;
     const yPos = yScale.value(task.name);
+
+    // 1. Calcul des durées et de la largeur finale (avec pliage)
+    const realDuration = getTaskDuration(task);
+    let finalWidth;
+    let isFolded = false;
+    let nonFoldedWidth = 0;
+
+    if (realDuration > threshold) {
+      isFolded = true;
+
+      nonFoldedWidth = threshold * oneDayInPixels;
+
+      const excessDuration = realDuration - threshold;
+      const compressedExcessWidth = excessDuration * FOLD_COMPRESSION_FACTOR * oneDayInPixels;
+
+      finalWidth = nonFoldedWidth + compressedExcessWidth;
+    } else {
+      const xEndReal = xScale.value(new Date(task.end));
+      finalWidth = xEndReal - xStart;
+    }
 
     const taskGroup = g.append('g')
         .datum(task)
@@ -534,11 +573,55 @@ const renderChart = () => {
     const rect = taskGroup.append('rect')
         .attr('x', xStart)
         .attr('y', yPos)
-        .attr('width', width)
+        .attr('width', finalWidth) // Largeur ajustée
         .attr('height', yScale.value.bandwidth())
-        .attr('fill', getCategoryColor(task.category)) // UTILISATION DE LA COULEUR DÉRIVÉE
+        .attr('fill', getCategoryColor(task.category))
         .attr('rx', 4)
         .style('cursor', 'grab')
+
+    // 2. Indicateur de Pliage
+    if (isFolded) {
+      const barHeight = yScale.value.bandwidth();
+
+      // Définition du motif de hachures (s'il n'existe pas)
+      const patternId = 'folding-pattern';
+      if (svgContent.select(`#${patternId}`).empty()) {
+        const defs = svg.select('svg').append('defs');
+
+        const pattern = defs.append('pattern')
+            .attr('id', patternId)
+            .attr('width', 10)
+            .attr('height', barHeight)
+            .attr('patternUnits', 'userSpaceOnUse');
+
+        pattern.append('line')
+            .attr('x1', 0).attr('y1', 0)
+            .attr('x2', 10).attr('y2', barHeight)
+            .attr('stroke', 'black')
+            .attr('stroke-width', 1);
+
+        pattern.append('line')
+            .attr('x1', 0).attr('y1', barHeight)
+            .attr('x2', 10).attr('y2', 0)
+            .attr('stroke', 'black')
+            .attr('stroke-width', 1);
+      }
+
+      // Dessiner le rectangle de hachures sur la partie pliée
+      const foldedPartStart = xStart + nonFoldedWidth;
+      const foldedPartWidth = finalWidth - nonFoldedWidth;
+
+      taskGroup.append('rect')
+          .attr('x', foldedPartStart)
+          .attr('y', yPos)
+          .attr('width', foldedPartWidth)
+          .attr('height', barHeight)
+          .attr('fill', `url(#${patternId})`)
+          .attr('opacity', 0.5);
+
+      taskGroup.append('title')
+          .text(`Durée réelle: ${realDuration} jours. Affiché plié (Whale Task) car > ${threshold} jours (${FOLD_MULTIPLIER}x la médiane).`);
+    }
 
     dragHandler(taskGroup);
 
@@ -568,20 +651,17 @@ const renderChart = () => {
 watch(() => props.tasks, (newTasks) => {
   if (Array.isArray(newTasks)) {
 
-    // Assurez-vous d'exclure la propriété 'color' si elle est présente dans les données entrantes
     localTasks.value = newTasks.map(t => {
-      // Destructuring pour exclure 'color' et s'assurer que c'est bien la catégorie qui est utilisée
       const { color, ...taskWithoutColor } = t;
       return { ...taskWithoutColor };
     });
 
-    // Initialiser/Mettre à jour la carte des couleurs
     initializeColorMap(localTasks.value);
 
     renderChart();
   } else {
     localTasks.value = [];
-    categoryColorMap.value = {}; // Vider la carte
+    categoryColorMap.value = {};
     renderChart();
   }
 }, { immediate: true, deep: true });
@@ -650,7 +730,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
         {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}
       </p>
       <p class="text-xs text-blue-500 font-medium">
-        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
+        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. Les tâches **Whales** (durée > 5x médiane) sont compressées et hachurées. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
       </p>
     </div>
 
