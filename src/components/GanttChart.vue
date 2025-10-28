@@ -11,25 +11,88 @@ const props = defineProps({
   tasks: { type: Array, default: () => [] },
   startDate: { type: String, default: '2012-12-12' },
   endDate: { type: String, default: '2013-12-13' },
-  // NOTE: La prop filterCategory a été supprimée, le filtre est maintenant interne.
 });
 
-// --- État Interne pour le Filtrage ---
+// --- État Interne pour le Filtrage et la Couleur des Catégories ---
 const localTasks = ref([]);
-const selectedCategory = ref('All'); // Nouvelle variable d'état interne pour le filtre
+const selectedCategory = ref('All'); // Variable d'état interne pour le filtre
 
-// --- Calcul des Catégories Uniques pour le sélecteur ---
-const availableCategories = computed(() => {
-  const categories = new Set(['All']); // 'All' est toujours disponible
+// NOUVEAU: Map pour stocker les couleurs attribuées aux catégories
+// Clé: Nom de la catégorie, Valeur: Code hexadécimal de la couleur
+const categoryColors = ref(new Map());
 
-  // Assurez-vous d'utiliser localTasks.value qui est la source de vérité
-  localTasks.value.forEach(t => {
-    if (t.category && t.category.trim()) {
-      categories.add(t.category);
+// NOUVEAU: État pour contrôler l'édition de la catégorie (sélection vs saisie)
+const isCategoryEditable = ref(false);
+
+
+// Palette de couleurs de base pour attribuer de nouvelles couleurs
+const colorPalette = [
+  '#4F46E5', // Indigo
+  '#10B981', // Emerald
+  '#EF4444', // Red
+  '#F59E0B', // Amber
+  '#06B6D4', // Cyan
+  '#6366F1', // Violet
+  '#EC4899', // Pink
+  '#1D4ED8', // Blue
+  '#D97706', // Orange
+];
+
+// NOUVEAU: Fonction pour initialiser et synchroniser les couleurs des catégories
+const initializeCategoryColors = (tasks) => {
+  // Ne pas appeler .clear() ici pour préserver les couleurs existantes
+
+  const categories = new Set();
+  tasks.forEach(t => {
+    const category = t.category || 'Uncategorized';
+    categories.add(category);
+    // Assurer que chaque catégorie a une couleur attribuée
+    if (!categoryColors.value.has(category)) {
+      // Logique d'attribution de couleur (basée sur l'index actuel)
+      const assignedColors = Array.from(categoryColors.value.values());
+      let newColor = colorPalette.find(c => !assignedColors.includes(c));
+      if (!newColor) {
+        const index = (categories.size - 1) % colorPalette.length;
+        newColor = colorPalette[index] || '#9CA3AF';
+      }
+      categoryColors.value.set(category, newColor);
     }
   });
-  // Retourne un tableau trié
+
+  // On peut optionnellement nettoyer les couleurs des catégories qui n'existent plus
+  categoryColors.value.forEach((_, category) => {
+    if (!categories.has(category)) {
+      categoryColors.value.delete(category);
+    }
+  });
+};
+
+
+/**
+ * Fonction pour obtenir la couleur d'une catégorie.
+ * Elle ne doit PAS muter categoryColors.value.
+ * @param {string} categoryName - Le nom de la catégorie.
+ * @returns {string} Le code couleur hexadécimal.
+ */
+const getCategoryColor = (categoryName) => {
+  return categoryColors.value.get(categoryName) || '#9CA3AF'; // Fallback gris
+};
+
+// --- CALCUL des Catégories Uniques pour le sélecteur et l'édition ---
+// Ce computed ne fait QUE calculer l'ARRAY des noms, sans muter categoryColors
+const uniqueCategories = computed(() => {
+  const categories = new Set();
+  localTasks.value.forEach(t => {
+    categories.add(t.category || 'Uncategorized');
+  });
+  // Retourne un tableau trié des noms de catégories uniques
   return Array.from(categories).sort();
+});
+
+
+// Catégories pour le FILTRE ('All' + catégories uniques)
+const availableCategories = computed(() => {
+  return ['All', ...uniqueCategories.value];
 });
 
 
@@ -38,19 +101,6 @@ const availableWidth = ref(0);
 const margin = { top: 40, right: 20, bottom: 30, left: 50 };
 const isDragging = ref(false); // Glissement horizontal (date)
 const editingTask = ref(null);
-
-// --- Logique interne du Tooltip (SUPPRIMÉE) ---
-// const hoveredTask = ref(null);
-// const tooltipPosition = ref({ x: 0, y: 0 });
-
-// const tooltipStyle = computed(() => ({
-//   position: 'absolute',
-//   left: `${tooltipPosition.value.x}px`,
-//   top: `${tooltipPosition.value.y}px`,
-//   transform: 'translateY(-100%) translateX(-50%)',
-//   pointerEvents: 'none',
-// }));
-
 
 // --- Fonctions utilitaires de Durée et de Date ---
 // Calcule la durée en jours entre deux dates (intervalle inclusif)
@@ -81,7 +131,7 @@ const filteredTasks = computed(() => {
     return localTasks.value;
   }
   // Filtrage basé sur la propriété 'category' de la tâche
-  return localTasks.value.filter(t => t.category === selectedCategory.value);
+  return localTasks.value.filter(t => (t.category || 'Uncategorized') === selectedCategory.value);
 });
 
 // La hauteur dépend maintenant du nombre de tâches FILTRÉES
@@ -89,16 +139,15 @@ const height = computed(() => Math.max(150, filteredTasks.value.length * 40 + ma
 
 
 // --- CALCUL DES ÉCHELLES DYNAMIQUES ---
-// Ces calculs restent basés sur TOUTES les tâches pour avoir une plage de temps complète
 const effectiveStartDate = computed(() => {
-  if (localTasks.value.length === 0) return new Date(props.startDate); // Fallback to prop default
+  if (localTasks.value.length === 0) return new Date(props.startDate);
 
   const dates = localTasks.value.map(t => new Date(t.start));
   return new Date(Math.min(...dates));
 });
 
 const effectiveEndDate = computed(() => {
-  if (localTasks.value.length === 0) return new Date(props.endDate); // Fallback to prop default
+  if (localTasks.value.length === 0) return new Date(props.endDate);
 
   const dates = localTasks.value.map(t => new Date(t.end));
   const maxDate = new Date(Math.max(...dates));
@@ -111,14 +160,14 @@ const effectiveEndDate = computed(() => {
 
 // --- FONCTIONS D'AJOUT/SUPPRESSION DE TÂCHES ---
 const addTask = () => {
-  // 1. Déterminer le prochain ID disponible (maxId + 1)
   const maxId = localTasks.value.length > 0 ? Math.max(...localTasks.value.map(t => t.id)) : 0;
   const newId = maxId + 1;
 
   let newTask;
+  // Utilisation de la liste des catégories uniques du computed pour le défaut
+  const defaultCategory = uniqueCategories.value.length > 0 ? uniqueCategories.value[0] : 'Planning';
 
   if (localTasks.value.length > 0) {
-    // Trouver la dernière tâche pour copier le style et la durée
     const lastTask = localTasks.value[localTasks.value.length - 1];
 
     const durationMs = new Date(lastTask.end).getTime() - new Date(lastTask.start).getTime();
@@ -128,19 +177,15 @@ const addTask = () => {
 
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    // Assurez-vous que la nouvelle tâche hérite des propriétés importantes mais pas de l'ID
     newTask = {
-      // L'ID est garanti d'être unique (maxId + 1)
       id: newId,
       name: `Tâche Copiée ${newId}`,
       start: formatDate(newStart),
       end: formatDate(newEnd),
-      color: lastTask.color || '#4F46E5', // Hériter de la couleur
-      category: lastTask.category || 'Uncategorized',
+      category: lastTask.category || defaultCategory,
       isNew: true,
     };
   } else {
-    // Cas par défaut si aucune tâche n'existe
     const defaultStart = new Date();
     const defaultEnd = new Date();
     defaultEnd.setDate(defaultEnd.getDate() + 10);
@@ -150,30 +195,26 @@ const addTask = () => {
       name: `Première Tâche ${newId}`,
       start: formatDate(defaultStart),
       end: formatDate(defaultEnd),
-      color: '#4F46E5',
-      category: 'Planning', // Catégorie par défaut
+      category: defaultCategory, // Catégorie par défaut
       isNew: true,
     };
   }
 
-  // Mettre à jour localement l'ordre (la nouvelle tâche est ajoutée à la fin)
   localTasks.value.push(newTask);
+  initializeCategoryColors(localTasks.value); // Initialiser la couleur pour la nouvelle tâche/catégorie
 
-  // Émettre le tableau complet mis à jour pour le parent
   emit('updateTasksOrder', localTasks.value);
 };
 
 const removeLastTask = () => {
   if (localTasks.value.length === 0) return;
 
-  // Trouver l'ID maximum (le plus récent)
   const maxId = Math.max(...localTasks.value.map(t => t.id));
 
-  // Mettre à jour localement
   const newTasks = localTasks.value.filter(t => t.id !== maxId);
   localTasks.value = newTasks;
 
-  // Émettre le tableau complet mis à jour pour le parent
+  initializeCategoryColors(localTasks.value); // Mettre à jour les couleurs après suppression
   emit('updateTasksOrder', localTasks.value);
 }
 
@@ -182,14 +223,14 @@ const handleTaskMoved = (movedTask) => {
   const taskIndex = localTasks.value.findIndex(t => t.id === movedTask.id);
 
   if (taskIndex !== -1) {
+    const originalTask = localTasks.value[taskIndex];
+
     const updatedTask = {
-      ...localTasks.value[taskIndex],
+      ...originalTask,
       start: movedTask.newStart,
       end: movedTask.newEnd,
-      // Le formulaire d'édition pourrait ne pas exposer toutes les propriétés,
-      // il est plus sûr d'utiliser la valeur actuelle pour la catégorie si elle existe
-      category: localTasks.value[taskIndex].category,
-      name: movedTask.name || localTasks.value[taskIndex].name,
+      category: movedTask.category || originalTask.category || 'Uncategorized', // Utiliser la catégorie mise à jour
+      name: movedTask.name || originalTask.name,
     };
 
     const newTasks = [...localTasks.value];
@@ -198,8 +239,10 @@ const handleTaskMoved = (movedTask) => {
     // 1. Mise à jour de l'état local pour le rendu D3
     localTasks.value = newTasks;
 
-    // 2. Émission de l'objet de tâche complet mis à jour
-    // taskUpdated est utilisé pour les changements de date/contenu
+    // 2. Assurer que la couleur de la catégorie est à jour
+    initializeCategoryColors(localTasks.value);
+
+    // 3. Émission de l'objet de tâche complet mis à jour
     emit('taskUpdated', localTasks.value);
   }
 };
@@ -211,13 +254,16 @@ const displayDurationInDays = computed(() => {
   return getDurationInDays(editingTask.value.start, editingTask.value.end);
 });
 
-// MODIFICATION ICI: Centrer le formulaire horizontalement dans le conteneur du graphique
+// Le style est conservé pour centrer le formulaire
 const editingFormStyle = computed(() => {
-  if (!editingTask.value || !editingTask.value.y || !ganttContainer.value) return {};
+  if (!editingTask.value || !ganttContainer.value) return {};
 
-  // Le centre horizontal est le milieu de la largeur disponible (disponibleWidth.value)
-  // availableWidth.value est la largeur du conteneur D3 moins la marge de gauche/droite
-  // On utilise la largeur totale du conteneur (ganttContainer.value.clientWidth)
+  // Calculer yPos basé sur la tâche d'origine dans localTasks (non filtré)
+  const task = localTasks.value.find(t => t.id === editingTask.value.id);
+
+  if (!task || !yScale.value) return {};
+
+  const yPos = yScale.value(task.name) || 0; // Utiliser yScale pour trouver la position verticale
   const containerWidth = ganttContainer.value.clientWidth;
 
   return {
@@ -225,7 +271,7 @@ const editingFormStyle = computed(() => {
     // Centre horizontal du conteneur (décalage de 50% du formulaire via transform)
     left: `${containerWidth / 2}px`,
     // Position verticale basée sur la tâche, ajustée par la marge du haut
-    top: `${editingTask.value.y + margin.top + 5}px`,
+    top: `${yPos + margin.top + 5}px`,
     // Centrer le formulaire sur le point 'left'
     transform: 'translateX(-50%)',
     zIndex: 30,
@@ -238,23 +284,20 @@ const yScale = ref(null);
 
 // NOUVELLE FONCTION: handleContextMenu
 const handleContextMenu = (task) => {
-  // Annuler tout état de glissement possible
   isDragging.value = false;
 
   if (editingTask.value && editingTask.value.id === task.id) {
-    editingTask.value = null; // Fermer si déjà ouvert pour la même tâche
+    editingTask.value = null;
+    isCategoryEditable.value = false; // Réinitialiser l'état
     return;
   }
 
-  // Assurez-vous que les échelles sont définies avant de calculer les positions
-  if (!xScale.value || !yScale.value) return;
-
-  // XPos est seulement nécessaire pour l'ancienne approche, mais on le laisse pour référence
-  const xPos = xScale.value(new Date(task.start));
+  // Si on ouvre le formulaire, on prend la position Y de la tâche filtrée
   const yPos = yScale.value(task.name);
 
-  // Si la tâche n'est pas dans le domaine Y (car elle est filtrée), ne pas ouvrir l'édition
-  if (yPos === undefined) return;
+  if (!xScale.value || yPos === undefined) return;
+
+  const xPos = xScale.value(new Date(task.start));
 
   editingTask.value = {
     id: task.id,
@@ -262,14 +305,15 @@ const handleContextMenu = (task) => {
     start: task.start,
     end: task.end,
     durationDays: getDurationInDays(task.start, task.end),
-    x: xPos, // x est conservé mais n'est plus utilisé pour le positionnement du formulaire
+    x: xPos,
     y: yPos,
-    category: task.category || 'Uncategorized', // Ajout de la catégorie
-    color: task.color,
+    category: task.category || 'Uncategorized',
   };
 
+  // Réinitialiser le mode d'édition de la catégorie à chaque ouverture
+  isCategoryEditable.value = false;
+
   nextTick(() => {
-    // Tente de cibler n'importe quel input dans le formulaire d'édition
     const inputElement = document.querySelector('.gantt-edit-form input');
     if (inputElement) {
       inputElement.focus();
@@ -277,32 +321,29 @@ const handleContextMenu = (task) => {
   });
 };
 
-watch(() => editingTask.value?.durationDays, (newDuration, oldDuration) => {
-  if (editingTask.value && newDuration && newDuration !== oldDuration) {
+watch(() => editingTask.value?.durationDays, (newDuration) => {
+  if (editingTask.value && newDuration) {
     editingTask.value.end = addDaysToDate(editingTask.value.start, newDuration);
   }
 });
 
-watch(() => editingTask.value?.start, (newStart, oldStart) => {
-  if (editingTask.value && newStart && newStart !== oldStart) {
-    // Met à jour la date de fin et la durée
-    editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
-  }
-  // Mettre à jour la date de fin (nécessaire si seule la date de début est modifiée)
+watch(() => editingTask.value?.start, (newStart) => {
   if (editingTask.value && newStart) {
+    editingTask.value.durationDays = getDurationInDays(newStart, editingTask.value.end);
+    // Assurer que la fin est toujours calculée si la durée est valide
     editingTask.value.end = addDaysToDate(newStart, editingTask.value.durationDays);
   }
 });
 
 const saveDates = () => {
-  const { id, name, start, end, category, color } = editingTask.value;
+  // Récupérer les propriétés pertinentes du formulaire
+  const { id, name, start, end, category } = editingTask.value;
 
   const newStart = new Date(start);
   const newEnd = new Date(end);
 
   if (newStart.getTime() >= newEnd.getTime()) {
-    console.error("La date de début doit être strictement antérieure à la date de fin.");
-    console.warn("Erreur: La date de début doit être antérieure à la date de fin. Opération annulée.");
+    console.error("La date de début doit être strictement antérieure à la date de fin. Opération annulée.");
     return;
   }
 
@@ -314,23 +355,26 @@ const saveDates = () => {
       name,
       start,
       end,
-      category,
-      color, // Mise à jour de la couleur
+      category: category || 'Uncategorized', // Assure qu'une catégorie est toujours définie
     };
 
     const newTasks = [...localTasks.value];
     newTasks[taskIndex] = updatedTask;
 
     localTasks.value = newTasks;
+    // CORRECTION CRITIQUE: Appeler la fonction d'initialisation des couleurs
+    // Ici on s'assure que la nouvelle catégorie (si elle existe) a une couleur
+    initializeCategoryColors(localTasks.value);
+
     emit('taskUpdated', localTasks.value);
   }
 
   editingTask.value = null;
+  isCategoryEditable.value = false; // Réinitialiser l'état après la sauvegarde
 };
 
 // --- Échelles D3 ---
 const setupScales = (width) => {
-  // Utilisation des dates effectives calculées
   const start = effectiveStartDate.value;
   const end = effectiveEndDate.value;
 
@@ -366,10 +410,9 @@ const renderChart = () => {
 
   // Rendu des axes
   g.append('g')
-      .attr('transform', `translate(0, ${filteredTasks.value.length * 40 || 50})`) // utilise filteredTasks.length
+      .attr('transform', `translate(0, ${filteredTasks.value.length * 40 || 50})`)
       .call(d3.axisBottom(xScale.value));
 
-  // L'axe Y utilise le domaine actuel de filteredTasks.value
   g.append('g')
       .attr('class', 'y-axis-g')
       .call(d3.axisLeft(yScale.value));
@@ -379,14 +422,12 @@ const renderChart = () => {
   // Variables pour le glissement vertical/horizontal
   let isReordering = false;
   let initialX, initialY;
-  let originalTaskIndex = -1; // Index dans le tableau FILTRÉ
-  const rowHeight = yScale.value.step(); // Hauteur d'une ligne
-  // La condition de filtre est basée sur l'état interne
+  let originalTaskIndex = -1;
+  const rowHeight = yScale.value.step();
   const isFilterActive = selectedCategory.value !== 'All';
 
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
-        // Empêcher le glissement si le formulaire d'édition est visible
         if (editingTask.value) {
           d3.select(this).style('cursor', 'pointer');
           event.sourceEvent.stopPropagation();
@@ -397,7 +438,6 @@ const renderChart = () => {
         isReordering = false;
         initialX = event.x;
         initialY = event.y;
-        // L'index d'origine est MAINTENANT dans le tableau FILTRÉ
         originalTaskIndex = filteredTasks.value.findIndex(t => t.id === d.id);
 
         d3.select(this)
@@ -406,83 +446,63 @@ const renderChart = () => {
             .style('cursor', 'grabbing');
       })
       .on('drag', function(event, d) {
-        if (editingTask.value) return; // Empêcher le glissement si édition active
+        if (editingTask.value) return;
 
         const dx = event.x - initialX;
         const dy = event.y - initialY;
 
-        // Déterminer le mode de glissement (date ou réorganisation)
-        // La réorganisation est UNIQUEMENT possible si AUCUN filtre n'est actif
         if (Math.abs(dy) > 5 && !isFilterActive) {
           isReordering = true;
-          // Déplacer la barre verticalement pour l'effet de réorganisation
           d3.select(this)
               .attr('transform', `translate(0, ${dy})`);
 
         } else if (Math.abs(dx) > 5 || isFilterActive) {
-          // Si filtre actif, le glissement vertical est ignoré, on passe au horizontal
           isDragging.value = true;
           isReordering = false;
-          // Déplacer la barre horizontalement
           const newX = xScale.value(new Date(d.start)) + dx;
           d3.select(this).select('rect').attr('x', newX);
-          // Le texte doit suivre la barre
           d3.select(this).select('text').attr('x', newX + 5);
           d3.select(this).attr('transform', null);
         }
       })
       .on('end', function(event, d) {
-        // Remettre le curseur à 'grab' par défaut
         d3.select(this).style('cursor', 'grab');
 
         if (editingTask.value) {
-          // Si on termine un glissement pendant l'édition, on s'assure juste de nettoyer les classes
           d3.select(this).classed('dragging', false).attr('transform', null);
           return;
         }
 
         d3.select(this)
             .classed('dragging', false)
-            .attr('transform', null); // Retirer la transformation de glissement
+            .attr('transform', null);
 
         if (isReordering && !isFilterActive) {
-          // --- Logique de Réorganisation Verticale (Corrigée) ---
-
-          // Calcul de l'index de ligne cible dans le domaine Y D3
           const finalY = yScale.value(d.name) + (event.y - initialY);
           const newRowIndex = Math.round(finalY / rowHeight);
 
-          // Assurer que l'index reste dans les limites (index dans le tableau filteredTasks)
           const newFilteredIndex = Math.max(0, Math.min(filteredTasks.value.length - 1, newRowIndex));
 
           if (newFilteredIndex !== originalTaskIndex) {
 
-            // Trouver les IDs pour la manipulation dans le tableau local (source de vérité)
             const taskIdToMove = filteredTasks.value[originalTaskIndex].id;
             const globalIndexToMove = localTasks.value.findIndex(t => t.id === taskIdToMove);
 
-            // L'ID cible est celui qui se trouve à la nouvelle position dans le tableau FILTRÉ
             const targetTaskId = filteredTasks.value[newFilteredIndex].id;
             const globalTargetIndex = localTasks.value.findIndex(t => t.id === targetTaskId);
 
             const newTasksArray = [...localTasks.value];
 
-            // 1. Extraire la tâche de son emplacement d'origine
             const [movedTask] = newTasksArray.splice(globalIndexToMove, 1);
 
-            // 2. Insérer la tâche (avec son ID d'origine) à l'emplacement de l'ID cible
             newTasksArray.splice(globalTargetIndex, 0, movedTask);
 
-            // 3. Mettre à jour l'état local et émettre le tableau complet
             localTasks.value = newTasksArray;
-            // updateTasksOrder est émis pour signaler un changement d'ordre
             emit('updateTasksOrder', localTasks.value);
           } else {
-            // Si aucune réorganisation effective, forcer le re-rendu pour remettre la barre en place
             renderChart();
           }
         } else if (isDragging.value) {
-          // --- Logique de Changement de Date Horizontale ---
           const finalBarX = xScale.value(new Date(d.start)) + (event.x - initialX);
 
           const newStartDate = xScale.value.invert(finalBarX);
@@ -497,9 +517,9 @@ const renderChart = () => {
             name: d.name,
             newStart: newStartFormatted,
             newEnd: newEndFormatted,
+            category: d.category
           });
         } else {
-          // Forcer le re-rendu si le glissement était minime pour réinitialiser la position
           renderChart();
         }
 
@@ -512,17 +532,16 @@ const renderChart = () => {
     const xStart = xScale.value(new Date(task.start));
     const xEnd = xScale.value(new Date(task.end));
     const width = xEnd - xStart;
-    // La position Y est calculée à l'intérieur du groupe 'g', basé sur la position dans le domaine Y
     const yPos = yScale.value(task.name);
 
-    // Créer un groupe pour la tâche pour appliquer la transformation de réorganisation
+    // NOUVEAU: Récupérer la couleur de la catégorie
+    const barColor = getCategoryColor(task.category || 'Uncategorized');
+
     const taskGroup = g.append('g')
         .datum(task)
         .attr('class', 'task-group')
-        // Remplacement de dblclick par contextmenu (clic droit)
         .on('contextmenu', function(event) {
-          event.preventDefault(); // Empêcher le menu contextuel du navigateur
-          // Stopper la propagation de l'événement natif pour D3
+          event.preventDefault();
           if (event.sourceEvent) {
             event.sourceEvent.stopPropagation();
           } else {
@@ -536,22 +555,12 @@ const renderChart = () => {
         .attr('y', yPos)
         .attr('width', width)
         .attr('height', yScale.value.bandwidth())
-        .attr('fill', task.color)
+        // MODIFICATION: Utilisation de la couleur de la catégorie
+        .attr('fill', barColor)
         .attr('rx', 4)
-        .style('cursor', 'grab')
-    // SUPPRESSION DES GESTIONNAIRES DE SURVOL (TOOLTIP)
-    // .on('mouseenter', (event, d) => {
-    //     const [x, y] = d3.pointer(event);
-    //     hoveredTask.value = d;
-    //     tooltipPosition.value = { x: x + margin.left, y: y + margin.top };
-    //     d3.select(event.currentTarget).style('filter', 'brightness(1.1)');
-    // })
-    // .on('mouseleave', (event) => {
-    //     hoveredTask.value = null;
-    //     d3.select(event.currentTarget).style('filter', 'none');
-    // });
+        .style('cursor', 'grab');
 
-    dragHandler(taskGroup); // Appliquer le drag au groupe
+    dragHandler(taskGroup);
 
     taskGroup.append("text")
         .text(d => d.name)
@@ -561,11 +570,10 @@ const renderChart = () => {
         .style("pointer-events", "none")
         .style("font-size", "12px");
 
-    // Afficher l'icône de réorganisation désactivée si le filtre est actif
     if (isFilterActive) {
       taskGroup.append("text")
           .text("🚫")
-          .attr("x", -margin.left + 5) // Positionner à gauche de l'axe Y
+          .attr("x", -margin.left + 5)
           .attr("y", yPos + yScale.value.bandwidth() / 2 + 5)
           .attr("fill", "gray")
           .style("font-size", "14px")
@@ -579,21 +587,24 @@ const renderChart = () => {
 
 watch(() => props.tasks, (newTasks) => {
   if (Array.isArray(newTasks)) {
-    // Si l'ordre des IDs ou le nombre de tâches change, forcer la mise à jour locale et le rendu
     const currentIds = localTasks.value.map(t => t.id).join(',');
     const newIds = newTasks.map(t => t.id).join(',');
 
-    // Si l'ordre ou le nombre d'éléments a changé (y compris les mises à jour venant du parent)
+    // Si l'ordre ou le nombre d'éléments a changé
     if (currentIds !== newIds || newTasks.length !== localTasks.value.length) {
       localTasks.value = newTasks.map(t => ({ ...t }));
+      // NOUVEAU: Appeler la fonction d'initialisation des couleurs ici
+      initializeCategoryColors(localTasks.value);
       renderChart();
     } else {
-      // Si seul le contenu (dates, noms) a changé, mettre à jour localTasks et le rendu
       localTasks.value = newTasks.map(t => ({ ...t }));
+      // NOUVEAU: Appeler la fonction d'initialisation des couleurs ici
+      initializeCategoryColors(localTasks.value);
       renderChart();
     }
   } else {
     localTasks.value = [];
+    initializeCategoryColors([]); // Mettre à jour les couleurs même si vide
     renderChart();
   }
 }, { immediate: true, deep: true });
@@ -604,7 +615,8 @@ onMounted(() => {
 });
 
 // Watch the local tasks, the effective dates, AND the internal selectedCategory to re-render the chart
-watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCategory], renderChart, { deep: true });
+// Retrait de 'uniqueCategories' de ce watcher, car il est un Computed qui dépend déjà de localTasks
+watch([localTasks, effectiveStartDate, effectiveEndDate, selectedCategory], renderChart, { deep: true });
 </script>
 
 <template>
@@ -627,14 +639,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
 
       <!-- Boutons d'Action (Ajouter/Supprimer) -->
       <button @click="addTask"
-              class="bg-green-500 hover:bg-green-600 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              class="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
               title="Ajouter une nouvelle tâche (copie de la dernière)">
         +
       </button>
 
       <button @click="removeLastTask"
               :disabled="localTasks.length === 0"
-              class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-gray-500 font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
+              class="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white font-bold py-1 px-2 rounded-full shadow-lg transition duration-150 text-lg leading-none w-8 h-8 flex items-center justify-center"
               title="Supprimer la dernière tâche (ID max)">
         &minus;
       </button>
@@ -666,14 +678,11 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
       </p>
     </div>
 
-    <!-- Tooltip pour le survol (SUPPRIMÉ) -->
-    <!-- <div v-if="hoveredTask" ...></div> -->
-
     <!-- Formulaire d'édition -->
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
-      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer</div>
+      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer (Couleur dérivée de la Catégorie)</div>
 
       <label class="text-xs font-medium text-gray-600">
         Nom:
@@ -682,20 +691,52 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
                class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
       </label>
 
+      <!-- CHAMP DE CATÉGORIE MODIFIÉ -->
       <label class="text-xs font-medium text-gray-600">
         Catégorie:
-        <input type="text"
-               v-model="editingTask.category"
-               class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
-      </label>
+        <div class="flex items-center space-x-2">
+          <!-- Si non éditable (par défaut): Menu Déroulant -->
+          <select v-if="!isCategoryEditable"
+                  v-model="editingTask.category"
+                  class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500">
+            <option v-for="category in uniqueCategories" :key="category" :value="category">
+              {{ category }}
+            </option>
+          </select>
 
-      <label class="text-xs font-medium text-gray-600">
-        Couleur:
-        <input type="color"
-               v-model="editingTask.color"
-               class="mt-1 h-8 border rounded-md w-full focus:ring-blue-500 focus:border-blue-500" />
-      </label>
+          <!-- Si éditable (après clic sur +): Champ de Saisie Libre -->
+          <input v-else
+                 type="text"
+                 v-model="editingTask.category"
+                 class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="Nouvelle catégorie" />
 
+          <!-- Bouton pour basculer en mode de saisie libre (Ajouter une nouvelle catégorie) -->
+          <button v-if="!isCategoryEditable"
+                  @click="isCategoryEditable = true"
+                  type="button"
+                  class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs p-1 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0"
+                  title="Ajouter une nouvelle catégorie">
+            +
+          </button>
+
+          <!-- Bouton pour revenir au menu déroulant -->
+          <button v-else
+                  @click="isCategoryEditable = false; editingTask.category = uniqueCategories.includes(editingTask.category) ? editingTask.category : uniqueCategories[0] || 'Uncategorized';"
+                  type="button"
+                  class="bg-gray-400 hover:bg-gray-500 text-white font-bold text-xs p-1 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0"
+                  title="Retour à la sélection">
+            &times;
+          </button>
+        </div>
+
+        <span class="text-xs text-gray-500 mt-1 block">
+            Couleur de la catégorie :
+            <span class="font-bold" :style="{ color: getCategoryColor(editingTask.category || 'Uncategorized') }">
+                {{ getCategoryColor(editingTask.category || 'Uncategorized') }}
+            </span>
+        </span>
+      </label>
 
       <hr class="border-gray-200 my-1">
 
@@ -723,13 +764,13 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
             <span class="text-xs font-bold text-blue-600">
                 Durée effective: {{ displayDurationInDays }} j.
             </span>
-      </div>
-
         <button @click="saveDates"
-                class="bg-blue-600 hover:bg-blue-700 text-gray-500 text-xs font-bold py-1 px-3 rounded-md transition duration-150">
+                class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1 px-3 rounded-md transition duration-150">
           Valider
         </button>
-      <button @click="editingTask = null" class="absolute top-1 right-1 text-gray-500 hover:text-gray-800 text-xs">
+      </div>
+
+      <button @click="editingTask = null; isCategoryEditable = false" class="absolute top-1 right-1 text-gray-500 hover:text-gray-800 text-xs">
         &times;
       </button>
     </div>
