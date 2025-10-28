@@ -5,13 +5,13 @@ import GanttChart from './components/GanttChart.vue';
 
 // 1. Déclarez le tableau de tâches réactif, c'est la source de vérité.
 const tasks = ref([
-  { id: 1, name: 'Initialisation du Projet', start: '2013-01-01', end: '2013-01-15', color: '#4F46E5', category: 'Planning', isNew: false },
-  { id: 2, name: 'Analyse des Besoins', start: '2013-01-16', end: '2013-02-10', color: '#10B981', category: 'Planning', isNew: false },
-  { id: 3, name: 'Phase de Développement', start: '2013-02-11', end: '2013-04-20', color: '#EF4444', category: 'Dev', isNew: false },
-  { id: 4, name: 'Tests Unitaires', start: '2013-04-21', end: '2013-04-30', color: '#F59E0B', category: 'QA', isNew: false },
-  { id: 5, name: 'Déploiement Initial', start: '2013-05-01', end: '2013-05-15', color: '#06B6D4', category: 'Livrable', isNew: false },
-  { id: 6, name: 'Documentation Finale', start: '2013-04-10', end: '2013-05-10', color: '#6366F1', category: 'QA', isNew: false },
-  { id: 7, name: 'Recette Client', start: '2013-05-16', end: '2013-05-30', color: '#EC4899', category: 'Livrable', isNew: false },
+  { id: 1, name: 'Initialisation du Projet', start: '2013-01-01', end: '2013-01-15', category: 'Planning', isNew: false },
+  { id: 2, name: 'Analyse des Besoins', start: '2013-01-16', end: '2013-02-10', category: 'Planning', isNew: false },
+  { id: 3, name: 'Phase de Développement', start: '2013-02-11', end: '2013-04-20', category: 'Dev', isNew: false },
+  { id: 4, name: 'Tests Unitaires', start: '2013-04-21', end: '2013-04-30', category: 'QA', isNew: false },
+  { id: 5, name: 'Déploiement Initial', start: '2013-05-01', end: '2013-05-15', category: 'Livrable', isNew: false },
+  { id: 6, name: 'Documentation Finale', start: '2013-04-10', end: '2013-05-10', category: 'QA', isNew: false },
+  { id: 7, name: 'Recette Client', start: '2013-05-16', end: '2013-05-30', category: 'Livrable', isNew: false },
 ]);
 
 const projectStart = ref('2013-01-01');
@@ -50,7 +50,6 @@ watch(tasks, (newTasks, oldTasks) => {
           newTask.name !== oldTask.name ||
           newTask.start !== oldTask.start ||
           newTask.end !== oldTask.end ||
-          newTask.color !== oldTask.color ||
           newTask.category !== oldTask.category
       )) {
         modifiedId = newTask.id;
@@ -103,39 +102,6 @@ watch(tasks, (newTasks, oldTasks) => {
           class="p-4 rounded-lg"
       />
 
-      <!-- Affichage de l'état actuel de toutes les tâches (pour le débogage) -->
-      <div class="mt-8 p-4 border-l-4 border-blue-500 bg-blue-50 rounded-r-lg">
-        <h2 class="text-xl font-semibold text-blue-800 mb-4">Statut de la Source de Données (Synchronisé avec le Gantt)</h2>
-
-        <div class="space-y-4">
-          <div
-              v-for="task in allTasksState"
-              :key="task.id"
-              :class="[
-              'p-3 rounded-lg flex justify-between items-center transition-all duration-300 shadow-md',
-              task.id === lastModifiedTaskId
-                ? 'bg-yellow-300 border-yellow-500 border-2 scale-[1.01]'
-                : 'bg-white border border-gray-200'
-            ]"
-          >
-            <div class="font-bold text-gray-700 w-1/3 flex items-center">
-              <span :style="{ backgroundColor: task.color }" class="w-3 h-3 rounded-full mr-2 shadow-inner"></span>
-              {{ task.id }} - {{ task.name }}
-            </div>
-            <div class="flex flex-col text-sm w-2/3 ml-4">
-              <div class="text-gray-600">
-                Catégorie: <span class="font-medium text-purple-700">{{ task.category }}</span>
-              </div>
-              <div class="text-green-600">
-                Début : <span class="font-mono font-extrabold">{{ task.start }}</span>
-              </div>
-              <div class="text-red-600">
-                Fin : <span class="font-mono font-extrabold">{{ task.end }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </main>
   </div>
 </template>
