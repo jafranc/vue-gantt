@@ -429,14 +429,32 @@ const renderChart = () => {
   const g = svg.append('g')
       .attr('transform', `translate(${margin.left}, ${margin.top})`);
 
-  // Rendu des axes
+// Rendu des axes
   g.append('g')
       .attr('transform', `translate(0, ${filteredTasks.value.length * 40 || 50})`)
       .call(d3.axisBottom(xScale.value));
 
-  g.append('g')
+  const yAxisG = g.append('g')
       .attr('class', 'y-axis-g')
       .call(d3.axisLeft(yScale.value));
+
+  // --- NOUVEAU: Rendre les libellés de l'axe Y cliquables pour ouvrir le menu contextuel ---
+  yAxisG.selectAll('.tick text')
+      .style('cursor', 'pointer') // Indique que le texte est cliquable
+      .on('contextmenu', function(event, d) {
+        event.preventDefault();
+        event.stopPropagation(); // Empêche la propagation de l'événement
+
+        // 'd' contient le nom de la tâche (le domaine de yScale)
+        const taskName = d;
+        const clickedTask = filteredTasks.value.find(t => t.name === taskName);
+
+        if (clickedTask) {
+          // Utiliser la fonction existante pour ouvrir le formulaire d'édition
+          handleContextMenu(clickedTask);
+        }
+      });
+  // -----------------------------------------------------------------------------------------
 
   if (!filteredTasks.value.length) return;
 
