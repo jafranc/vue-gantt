@@ -3,8 +3,7 @@ import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import * as d3 from 'd3';
 
 // L'événement taskUpdated est utilisé pour les changements de dates/contenu
-// L'événement updateTasksOrder est utilisé pour la réorganisation verticale
-const emit = defineEmits(['taskUpdated', 'updateTasksOrder']);
+const emit = defineEmits(['taskUpdated']);
 
 const props = defineProps({
   // tasks is the primary data source
@@ -206,7 +205,7 @@ const addTask = () => {
 
   initializeColorMap(localTasks.value);
 
-  emit('updateTasksOrder', localTasks.value);
+  emit('taskUpdated', localTasks.value);
 };
 
 const removeLastTask = () => {
@@ -214,7 +213,7 @@ const removeLastTask = () => {
   const maxId = Math.max(...localTasks.value.map(t => t.id));
   const newTasks = localTasks.value.filter(t => t.id !== maxId);
   localTasks.value = newTasks;
-  emit('updateTasksOrder', localTasks.value);
+  emit('taskUpdated', localTasks.value);
 }
 
 const refreshSorting = () => {
@@ -229,7 +228,7 @@ const refreshSorting = () => {
   });
 
   localTasks.value = sortedTasks;
-  emit('updateTasksOrder', localTasks.value);
+  emit('taskUpdated', localTasks.value);
 };
 
 const handleTaskMoved = (movedTask) => {
@@ -504,7 +503,7 @@ const renderChart = () => {
             newTasksArray.splice(globalTargetIndex, 0, movedTask);
 
             localTasks.value = newTasksArray;
-            emit('updateTasksOrder', localTasks.value);
+            emit('taskUpdated', localTasks.value);
           } else {
             renderChart();
           }
@@ -541,12 +540,11 @@ const renderChart = () => {
     const realDuration = getTaskDuration(task);
     let finalWidth;
     let isFolded = false;
-    let nonFoldedWidth = 0;
 
     if (realDuration > threshold) {
       isFolded = true;
 
-      nonFoldedWidth = threshold * oneDayInPixels;
+      const nonFoldedWidth = threshold * oneDayInPixels;
 
       const excessDuration = realDuration - threshold;
       const compressedExcessWidth = excessDuration * FOLD_COMPRESSION_FACTOR * oneDayInPixels;
@@ -570,54 +568,24 @@ const renderChart = () => {
           handleContextMenu(task);
         });
 
+    // 2. Dessiner le rectangle de la tâche
     const rect = taskGroup.append('rect')
         .attr('x', xStart)
         .attr('y', yPos)
-        .attr('width', finalWidth) // Largeur ajustée
+        .attr('width', finalWidth)
         .attr('height', yScale.value.bandwidth())
+
+        // Remplissage standard avec la couleur de catégorie
         .attr('fill', getCategoryColor(task.category))
+
         .attr('rx', 4)
         .style('cursor', 'grab')
 
-    // 2. Indicateur de Pliage
+    // 3. Indicateur de pliage (Optionnel : ajouter une bordure épaisse ou des hachures)
     if (isFolded) {
-      const barHeight = yScale.value.bandwidth();
-
-      // Définition du motif de hachures (s'il n'existe pas)
-      const patternId = 'folding-pattern';
-      if (svgContent.select(`#${patternId}`).empty()) {
-        const defs = svg.select('svg').append('defs');
-
-        const pattern = defs.append('pattern')
-            .attr('id', patternId)
-            .attr('width', 10)
-            .attr('height', barHeight)
-            .attr('patternUnits', 'userSpaceOnUse');
-
-        pattern.append('line')
-            .attr('x1', 0).attr('y1', 0)
-            .attr('x2', 10).attr('y2', barHeight)
-            .attr('stroke', 'black')
-            .attr('stroke-width', 1);
-
-        pattern.append('line')
-            .attr('x1', 0).attr('y1', barHeight)
-            .attr('x2', 10).attr('y2', 0)
-            .attr('stroke', 'black')
-            .attr('stroke-width', 1);
-      }
-
-      // Dessiner le rectangle de hachures sur la partie pliée
-      const foldedPartStart = xStart + nonFoldedWidth;
-      const foldedPartWidth = finalWidth - nonFoldedWidth;
-
-      taskGroup.append('rect')
-          .attr('x', foldedPartStart)
-          .attr('y', yPos)
-          .attr('width', foldedPartWidth)
-          .attr('height', barHeight)
-          .attr('fill', `url(#${patternId})`)
-          .attr('opacity', 0.5);
+      // Ajouter une bordure pour accentuer la tâche pliée, en plus de l'indicateur de nom
+      rect.attr('stroke', 'black')
+          .attr('stroke-width', 2);
 
       taskGroup.append('title')
           .text(`Durée réelle: ${realDuration} jours. Affiché plié (Whale Task) car > ${threshold} jours (${FOLD_MULTIPLIER}x la médiane).`);
@@ -625,13 +593,18 @@ const renderChart = () => {
 
     dragHandler(taskGroup);
 
+    // 4. Ajout du préfixe au nom de la tâche si elle est pliée
+    const displayName = isFolded ? `📐: ${task.name}` : task.name;
+
     taskGroup.append("text")
-        .text(d => d.name)
+        .text(displayName) // Utilisation du nom modifié
         .attr("x", xStart + 5)
         .attr("y", yPos + yScale.value.bandwidth() / 2 + 5)
         .attr("fill", "black")
         .style("pointer-events", "none")
-        .style("font-size", "12px");
+        .style("font-size", "12px")
+        // Rendre le texte en gras pour les tâches pliées (pour plus de visibilité)
+        .style("font-weight", isFolded ? "bold" : "normal");
 
     if (isFilterActive) {
       taskGroup.append("text")
@@ -730,7 +703,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
         {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}
       </p>
       <p class="text-xs text-blue-500 font-medium">
-        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. Les tâches **Whales** (durée > 5x médiane) sont compressées et hachurées. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
+        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. Les tâches **Whales** (durée > 5x médiane) sont **compressées** et marquées par un **📐: ** dans leur nom. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
       </p>
     </div>
 
@@ -748,7 +721,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
 
       <label class="text-xs font-medium text-gray-600">
         Catégorie:
-        <div class="flex items-center space-x-2 mt-1">
+<!--        <div class="flex items-center space-x-2 mt-1">-->
           <select v-if="!newCategoryInput"
                   v-model="editingTask.category"
                   class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500">
@@ -769,7 +742,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
                   :title="newCategoryInput ? 'Annuler l\'entrée' : 'Créer une nouvelle catégorie'">
             {{ newCategoryInput ? '&times;' : '+' }}
           </button>
-        </div>
+<!--        </div>-->
       </label>
       <hr class="border-gray-200 my-1">
 
