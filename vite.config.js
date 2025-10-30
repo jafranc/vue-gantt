@@ -33,12 +33,12 @@ export default defineConfig({
         // Règle pour exclure Vue et D3 du bundle final (Dépendances externes)
         // C'est CRUCIAL pour que l'utilisateur final charge Vue et D3 une seule fois.
         rollupOptions: {
-            external: ['vue', 'd3'],
+            external: ['vue'],//d3
             output: {
                 // Fournit des noms de variables globales pour l'accès UMD (si Vue et D3 sont chargés par CDN)
                 globals: {
                     vue: 'Vue',
-                    d3: 'd3',
+                    // d3: 'd3',
                 },
             },
         },
