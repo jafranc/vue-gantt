@@ -73,7 +73,6 @@ const getCategoryColor = (category) => {
   return categoryColorMap.value[category] || '#9CA3AF';
 };
 
-
 // --- ÉTAT D'ÉDITION ET CATÉGORIE ---
 const newCategoryInput = ref(false);
 
@@ -656,6 +655,13 @@ const renderChart = () => {
   });
 };
 
+// Calcule la couleur à afficher dans le formulaire d'édition
+const editingCategoryColor = computed(() => {
+  return editingTask.value
+      ? getCategoryColor(editingTask.value.category)
+      : '#9CA3AF'; // Couleur de secours
+});
+
 // --- Hooks et Watchers ---
 
 watch(() => props.tasks, (newTasks) => {
@@ -694,7 +700,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
         <select id="categoryFilter"
                 v-model="selectedCategory"
                 class="p-1 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm">
-          <option v-for="category in availableCategories" :key="category" :value="category">
+          <option v-for="category in availableCategories" :key="category" :value="category" :style="{ color : getCategoryColor(category) }">
             {{ category }}
           </option>
         </select>
@@ -747,7 +753,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
-      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer</div>
+      <div class="text-sm font-bold text-gray-700 mb-2">Éditer</div>
 
       <label class="text-xs font-medium text-gray-600">
         Nom:
@@ -762,7 +768,7 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
           <select v-if="!newCategoryInput"
                   v-model="editingTask.category"
                   class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="category in uniqueExistingCategories" :key="category" :value="category">
+            <option v-for="category in uniqueExistingCategories" :key="category" :value="category" :style="{ color : getCategoryColor(category) }">
               {{ category }}
             </option>
           </select>
@@ -779,7 +785,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
                   :title="newCategoryInput ? 'Annuler l\'entrée' : 'Créer une nouvelle catégorie'">
             {{ newCategoryInput ? '&times;' : '+' }}
           </button>
-<!--        </div>-->
+
+        <button :style="{ backgroundColor : editingCategoryColor }"
+                type="button"
+                class="text-gray-500 hover:text-blue-600 font-bold w-6 h-6 flex items-center justify-center border rounded-full" >
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        </button>
+
+        <!--        </div>-->
       </label>
       <hr class="border-gray-200 my-1">
 
@@ -821,19 +834,45 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
 </template>
 
 <style scoped>
-.dragging {
-  opacity: 0.7;
-  filter: brightness(1.2);
-}
+
 .gantt-edit-form {
   box-sizing: border-box;
-  background-color: rgba(255, 255, 255, 0.95);
+  /* Maintient la transparence de base (background-color: rgba(255, 255, 255, 0.95); est déjà en place) */
+  background-color: rgba(255, 255, 255, 0.9);
+
+  /* Ajout de l'effet "Verre Dépoli" (Frosted Glass) */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px); /* Pour la compatibilité Safari */
+
+  /* Amélioration de l'ombre/profondeur */
+  /* Combine une ombre extérieure (shadow-xl) avec une ombre intérieure subtile */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), /* Simule shadow-xl de Tailwind */
+  0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Ajout d'une bordure plus douce et subtile si vous souhaitez un contour moins marqué que border-blue-400 */
+  /* border: 1px solid rgba(147, 197, 253, 0.5); /* blue-300 transparent */
+
+  /* S'assure que tout est bien centré et réactif */
+  min-width: 300px;
+  max-width: 90vw; /* Empêche de déborder sur les petits écrans */
 }
+
+/* Vous pourriez également vouloir cibler les inputs pour un look plus plat ou encadré */
+.gantt-edit-form input[type="text"],
+.gantt-edit-form input[type="number"],
+.gantt-edit-form input[type="date"],
+.gantt-edit-form select {
+  transition: all 0.2s ease-in-out;
+}
+
+.gantt-edit-form input:focus,
+.gantt-edit-form select:focus {
+  border-color: #3b82f6; /* blue-500 */
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
 .g text {
-  font-size: 10px;
+  font-size: 12px;
 }
-.task-group {
-  /* Assure que le glissement vertical fonctionne */
-  transform-origin: 0 0;
-}
+
 </style>
