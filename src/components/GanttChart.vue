@@ -470,6 +470,7 @@ const renderChart = () => {
   const rowHeight = yScale.value.step();
   const isFilterActive = selectedCategory.value !== 'All';
 
+
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
         if (editingTask.value) {
@@ -568,6 +569,7 @@ const renderChart = () => {
       });
 
   // Itérer sur filteredTasks pour le rendu
+  // Itérer sur filteredTasks pour le rendu
   filteredTasks.value.forEach((task) => {
     const xStart = xScale.value(new Date(task.start));
     const yPos = yScale.value(task.name);
@@ -577,7 +579,11 @@ const renderChart = () => {
     let finalWidth;
     let isFolded = false;
 
-    if (realDuration > threshold) {
+    // NOUVEAU: Détermine si la tâche est un diamant
+    const isSingleDay = realDuration <= 2;
+
+    // Ajuster la logique de pliage pour ignorer les tâches d'un seul jour
+    if (!isSingleDay && realDuration > threshold) {
       isFolded = true;
 
       const nonFoldedWidth = threshold * oneDayInPixels;
@@ -586,7 +592,7 @@ const renderChart = () => {
       const compressedExcessWidth = excessDuration * FOLD_COMPRESSION_FACTOR * oneDayInPixels;
 
       finalWidth = nonFoldedWidth + compressedExcessWidth;
-    } else {
+    } else if (!isSingleDay) { // Calcul de la largeur standard pour les tâches > 1 jour
       const xEndReal = xScale.value(new Date(task.end));
       finalWidth = xEndReal - xStart;
     }
@@ -604,20 +610,50 @@ const renderChart = () => {
           handleContextMenu(task);
         });
 
-    // 2. Dessiner le rectangle de la tâche
-    const rect = taskGroup.append('rect')
-        .attr('x', xStart)
-        .attr('y', yPos)
-        .attr('width', finalWidth)
-        .attr('height', yScale.value.bandwidth())
+    // 2. Dessiner le rectangle ou le diamant de la tâche
+    const barHeight = yScale.value.bandwidth();
+    let rect;
+    let textX; // Nouvelle variable pour la position X du texte
 
-        // Remplissage standard avec la couleur de catégorie
-        .attr('fill', getCategoryColor(task.category))
+    if (isSingleDay) {
+      // CAS DIAMANT : Carré tourné (simule le losange)
+      const diamondSize = barHeight/5;
+      const halfSize = diamondSize / 2;
 
-        .attr('rx', 4)
-        .style('cursor', 'grab')
+      // Centrer la forme sur la position de début (xStart)
+      const diamondX = xStart - halfSize;
+      const diamondY = yPos;
 
-    // 3. Indicateur de pliage (Optionnel : ajouter une bordure épaisse ou des hachures)
+      rect = taskGroup.append('rect')
+          .attr('x', diamondX)
+          .attr('y', diamondY)
+          .attr('width', diamondSize)
+          .attr('height', diamondSize)
+          // Rotation 45deg autour du centre du carré
+          .attr('transform', `rotate(45, ${diamondX + halfSize}, ${diamondY + halfSize})`)
+          .attr('rx', 2);
+
+      // Positionner le texte après le diamant
+      textX = xStart + halfSize + 5;
+
+    } else {
+      // CAS RECTANGLE (Plié ou Standard)
+      rect = taskGroup.append('rect')
+          .attr('x', xStart)
+          .attr('y', yPos)
+          .attr('width', finalWidth)
+          .attr('height', barHeight)
+          .attr('rx', 4);
+
+      // Positionner le texte dans le rectangle
+      textX = xStart + 5;
+    }
+
+    // Remplissage standard avec la couleur de catégorie
+    rect.attr('fill', getCategoryColor(task.category))
+        .style('cursor', 'grab');
+
+    // 3. Indicateur de pliage (uniquement pour les tâches > 1 jour)
     if (isFolded) {
       // Ajouter une bordure pour accentuer la tâche pliée, en plus de l'indicateur de nom
       rect.attr('stroke', 'black')
@@ -631,17 +667,20 @@ const renderChart = () => {
 
     // 4. Ajout du préfixe au nom de la tâche si elle est pliée
     const displayName = isFolded ? `📐: ${task.name}` : task.name;
+    // NOUVEAU: Si c'est un diamant, ajouter un préfixe différent pour le signaler
+    const finalDisplayName = isSingleDay ? `◆: ${displayName}` : displayName;
+
 
     taskGroup.append("text")
-        .text(displayName) // Utilisation du nom modifié
-        .attr("x", xStart + 5)
-        .attr("y", yPos + yScale.value.bandwidth() / 2 + 5)
+        .text(finalDisplayName) // Utilisation du nom modifié
+        // Utiliser la position X calculée ci-dessus
+        .attr("x", textX)
+        .attr("y", yPos + barHeight / 2 + 5)
         .attr("fill", "black")
         .style("pointer-events", "none")
         .style("font-size", "12px")
-        // Rendre le texte en gras pour les tâches pliées (pour plus de visibilité)
-        .style("font-weight", isFolded ? "bold" : "normal");
-
+        // Rendre le texte en gras pour les tâches pliées/diamants
+        .style("font-weight", (isFolded || isSingleDay) ? "bold" : "normal");
     if (isFilterActive) {
       taskGroup.append("text")
           .text("🚫")
