@@ -73,6 +73,7 @@ const getCategoryColor = (category) => {
   return categoryColorMap.value[category] || '#9CA3AF';
 };
 
+
 // --- ÉTAT D'ÉDITION ET CATÉGORIE ---
 const newCategoryInput = ref(false);
 
@@ -303,6 +304,8 @@ const handleContextMenu = (task) => {
     y: yPos,
     category: task.category || 'Uncategorized',
     newCategory: null,
+    // La fréquence est importante pour les tâches récurrentes
+    freq: task.freq || null,
   };
 
   newCategoryInput.value = false;
@@ -339,7 +342,7 @@ watch(() => editingTask.value?.start, (newStart, oldStart) => {
 });
 
 const saveDates = () => {
-  const { id, name, start, end } = editingTask.value;
+  const { id, name, start, end, freq } = editingTask.value; // Ajout de freq
   const taskIndex = localTasks.value.findIndex(t => t.id === id);
   if (taskIndex === -1) return;
   const originalTask = localTasks.value[taskIndex];
@@ -363,17 +366,10 @@ const saveDates = () => {
   const newStart = new Date(start);
   const newEnd = new Date(end);
 
-  // if (newStart.getTime() >= newEnd.getTime()) {
-  //   console.error("La date de début doit être strictement antérieure à la date de fin.");
-  //   console.warn("Erreur: La date de début doit être antérieure à la date de fin. Opération annulée.");
-  //   return;
-
   // Vérification ajustée (Line 377):
   if (newStart.getTime() >= newEnd.getTime()) {
     console.error("La tâche doit avoir une durée d'au moins un jour (date de début < date de fin).");
     console.warn("Erreur: La date de début doit être strictement antérieure à la date de fin pour garantir une durée positive. Opération annulée.");
-    // On ne fait rien de plus ici; les watchers devraient avoir empêché cela.
-    // Si elle atteint ici, c'est une manipulation manuelle, et on annule.
     return;
   }
 
@@ -383,6 +379,7 @@ const saveDates = () => {
     start,
     end,
     category: newCategory,
+    freq: freq || null, // Sauvegarde de la fréquence (peut être gérée par un autre champ du form si nécessaire)
   };
 
   const newTasks = [...localTasks.value];
@@ -393,6 +390,13 @@ const saveDates = () => {
 
   editingTask.value = null;
 };
+
+// Calcule la couleur à afficher dans le formulaire d'édition
+const editingCategoryColor = computed(() => {
+  return editingTask.value
+      ? getCategoryColor(editingTask.value.category)
+      : '#9CA3AF'; // Couleur de secours
+});
 
 // --- Échelles D3 ---
 const setupScales = (width) => {
@@ -469,7 +473,6 @@ const renderChart = () => {
   let originalTaskIndex = -1;
   const rowHeight = yScale.value.step();
   const isFilterActive = selectedCategory.value !== 'All';
-
 
   const dragHandler = d3.drag()
       .on('start', function(event, d) {
@@ -569,10 +572,91 @@ const renderChart = () => {
       });
 
   // Itérer sur filteredTasks pour le rendu
-  // Itérer sur filteredTasks pour le rendu
   filteredTasks.value.forEach((task) => {
     const xStart = xScale.value(new Date(task.start));
     const yPos = yScale.value(task.name);
+    const barHeight = yScale.value.bandwidth();
+
+    // NOUVEAU: Logique pour la fréquence
+    const hasFrequency = task.freq && task.freq > 0;
+
+    if (hasFrequency) {
+      // --- TÂCHE RÉCURRENTE (DIAMANTS + LIGNE POINTILLÉE) ---
+
+      const frequencyDays = task.freq;
+      const startDate = new Date(task.start);
+      const endDate = new Date(task.end);
+
+      let recurrenceDates = [];
+      let currentDate = new Date(startDate);
+
+      // Calcul des dates récurrentes
+      while (currentDate.getTime() <= endDate.getTime()) {
+        recurrenceDates.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + frequencyDays);
+      }
+
+      if (recurrenceDates.length === 0) return;
+
+      const taskGroup = g.append('g')
+          .datum(task)
+          .attr('class', 'task-group task-freq');
+      // Le dragHandler n'est pas appliqué pour les tâches récurrentes
+
+      const categoryColor = getCategoryColor(task.category);
+
+      // A. Dessiner la Ligne Pointillée
+      const xFirst = xScale.value(recurrenceDates[0]);
+      const xLast = xScale.value(recurrenceDates[recurrenceDates.length - 1]);
+      const lineY = yPos + barHeight / 10;
+
+      taskGroup.append('line')
+          .attr('x1', xFirst)
+          .attr('y1', lineY)
+          .attr('x2', xLast)
+          .attr('y2', lineY)
+          .attr('stroke', categoryColor)
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', '5, 5') // Ligne pointillée
+          .attr('opacity', 0.6);
+
+      // B. Dessiner les Diamants
+      const diamondSize = barHeight / 5;
+      const halfSize = diamondSize / 2;
+
+      recurrenceDates.forEach(date => {
+        const dateFormatted = d3.timeFormat('%Y-%m-%d')(date);
+        const xCenter = xScale.value(date);
+        const diamondX = xCenter - halfSize;
+        const diamondY = yPos;
+
+        // 2. Le Diamant (Carré tourné)
+        taskGroup.append('rect')
+            .attr('x', diamondX)
+            .attr('y', diamondY)
+            .attr('width', diamondSize)
+            .attr('height', diamondSize)
+            .attr('transform', `rotate(45, ${diamondX + halfSize}, ${diamondY + halfSize})`)
+            .attr('rx', 2)
+            .attr('fill', categoryColor)
+            .attr('stroke', 'black')
+            .attr('stroke-width', 1);
+      });
+
+      // C. Ajouter le Nom de la Tâche (à côté du premier diamant)
+      taskGroup.append("text")
+          .text(`🔁: ${task.name}`)
+          .attr("x", xFirst + diamondSize + 5)
+          .attr("y", yPos + barHeight / 2 + 5)
+          .attr("fill", "black")
+          .style("pointer-events", "none")
+          .style("font-size", "12px")
+          .style("font-weight", "bold");
+
+      return; // Passe à la tâche suivante
+    }
+
+    // --- LOGIQUE EXISTANTE POUR LES TÂCHES NON RÉCURRENTES (Barre ou Diamant Unique) ---
 
     // 1. Calcul des durées et de la largeur finale (avec pliage)
     const realDuration = getTaskDuration(task);
@@ -580,7 +664,7 @@ const renderChart = () => {
     let isFolded = false;
 
     // NOUVEAU: Détermine si la tâche est un diamant
-    const isSingleDay = realDuration <= 2;
+    const isSingleDay = realDuration <= 1;
 
     // Ajuster la logique de pliage pour ignorer les tâches d'un seul jour
     if (!isSingleDay && realDuration > threshold) {
@@ -597,6 +681,7 @@ const renderChart = () => {
       finalWidth = xEndReal - xStart;
     }
 
+
     const taskGroup = g.append('g')
         .datum(task)
         .attr('class', 'task-group')
@@ -611,13 +696,12 @@ const renderChart = () => {
         });
 
     // 2. Dessiner le rectangle ou le diamant de la tâche
-    const barHeight = yScale.value.bandwidth();
     let rect;
-    let textX; // Nouvelle variable pour la position X du texte
+    let textX;
 
     if (isSingleDay) {
-      // CAS DIAMANT : Carré tourné (simule le losange)
-      const diamondSize = barHeight/5;
+      // CAS DIAMANT UNIQUE
+      const diamondSize = barHeight;
       const halfSize = diamondSize / 2;
 
       // Centrer la forme sur la position de début (xStart)
@@ -653,9 +737,8 @@ const renderChart = () => {
     rect.attr('fill', getCategoryColor(task.category))
         .style('cursor', 'grab');
 
-    // 3. Indicateur de pliage (uniquement pour les tâches > 1 jour)
+    // 3. Indicateur de pliage
     if (isFolded) {
-      // Ajouter une bordure pour accentuer la tâche pliée, en plus de l'indicateur de nom
       rect.attr('stroke', 'black')
           .attr('stroke-width', 2);
 
@@ -681,6 +764,7 @@ const renderChart = () => {
         .style("font-size", "12px")
         // Rendre le texte en gras pour les tâches pliées/diamants
         .style("font-weight", (isFolded || isSingleDay) ? "bold" : "normal");
+
     if (isFilterActive) {
       taskGroup.append("text")
           .text("🚫")
@@ -693,13 +777,6 @@ const renderChart = () => {
     }
   });
 };
-
-// Calcule la couleur à afficher dans le formulaire d'édition
-const editingCategoryColor = computed(() => {
-  return editingTask.value
-      ? getCategoryColor(editingTask.value.category)
-      : '#9CA3AF'; // Couleur de secours
-});
 
 // --- Hooks et Watchers ---
 
@@ -739,7 +816,13 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
         <select id="categoryFilter"
                 v-model="selectedCategory"
                 class="p-1 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm">
-          <option v-for="category in availableCategories" :key="category" :value="category" :style="{ color : getCategoryColor(category) }">
+          <option v-for="category in availableCategories"
+                  :key="category"
+                  :value="category"
+                  :style="{
+                      color: category === 'All' ? 'inherit' : getCategoryColor(category),
+                      fontWeight: 'bold'
+                  }">
             {{ category }}
           </option>
         </select>
@@ -785,14 +868,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
         {{ d3.timeFormat('%Y-%m-%d')(effectiveEndDate) }}
       </p>
       <p class="text-xs text-blue-500 font-medium">
-        (CONSEIL: **Cliquez-droit** sur une barre de tâche pour l'éditer. Les tâches **Whales** (durée > 5x médiane) sont **compressées** et marquées par un **📐: ** dans leur nom. **Glissez verticalement** pour réordonner (désactivé si un filtre est appliqué).)
+        (CONSEIL: **Cliquez-droit** sur une barre de tâche ou un jalon pour l'éditer. Les tâches **Whales** (durée > 5x médiane) sont **compressées** et marquées par un **📐: **. Les tâches courtes d'un jour sont des **◆: diamants**. Les tâches **récurrentes** sont des séries de **🔁: diamants**.)
       </p>
     </div>
 
     <div v-if="editingTask"
          :style="editingFormStyle"
          class="gantt-edit-form p-4 border border-blue-400 rounded-lg shadow-xl flex flex-col space-y-2 z-50">
-      <div class="text-sm font-bold text-gray-700 mb-2">Éditer</div>
+      <div class="text-sm font-semibold text-gray-700 mb-2">Éditer</div>
 
       <label class="text-xs font-medium text-gray-600">
         Nom:
@@ -802,12 +885,18 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
       </label>
 
       <label class="text-xs font-medium text-gray-600">
-        Catégorie:
-<!--        <div class="flex items-center space-x-2 mt-1">-->
+        <div class="flex justify-between items-center mb-1">
+          <span>Catégorie:</span>
+          <span :style="{ backgroundColor: editingCategoryColor }"
+                class="w-6 h-6 rounded-full border border-gray-400 inline-block">
+          </span>
+        </div>
+
+        <div class="flex items-center space-x-1 mt-1">
           <select v-if="!newCategoryInput"
                   v-model="editingTask.category"
-                  class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="category in uniqueExistingCategories" :key="category" :value="category" :style="{ color : getCategoryColor(category) }">
+                  class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500 flex-grow">
+            <option v-for="category in uniqueExistingCategories" :key="category" :value="category">
               {{ category }}
             </option>
           </select>
@@ -816,22 +905,15 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
                  type="text"
                  v-model="editingTask.newCategory"
                  placeholder="Nouvelle catégorie..."
-                 class="p-1 border border-blue-500 rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+                 class="p-1 border border-blue-500 rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500 flex-grow" />
 
           <button @click="newCategoryInput = !newCategoryInput"
                   type="button"
-                  class="text-gray-500 hover:text-blue-600 font-bold w-6 h-6 flex items-center justify-center border rounded-full transition duration-150"
+                  class="text-gray-500 hover:text-blue-600 font-bold w-6 h-6 flex items-center justify-center border rounded-full transition duration-150 flex-shrink-0"
                   :title="newCategoryInput ? 'Annuler l\'entrée' : 'Créer une nouvelle catégorie'">
             {{ newCategoryInput ? '&times;' : '+' }}
           </button>
-
-        <button :style="{ backgroundColor : editingCategoryColor }"
-                type="button"
-                class="text-gray-500 hover:text-blue-600 font-bold w-6 h-6 flex items-center justify-center border rounded-full" >
-          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-        </button>
-
-        <!--        </div>-->
+        </div>
       </label>
       <hr class="border-gray-200 my-1">
 
@@ -873,10 +955,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
 </template>
 
 <style scoped>
+.dragging {
+  opacity: 0.7;
+  filter: brightness(1.2);
+}
 
+/* NOUVEAUX STYLES CSS POUR LE FORMULAIRE D'ÉDITION */
 .gantt-edit-form {
   box-sizing: border-box;
-  /* Maintient la transparence de base (background-color: rgba(255, 255, 255, 0.95); est déjà en place) */
   background-color: rgba(255, 255, 255, 0.9);
 
   /* Ajout de l'effet "Verre Dépoli" (Frosted Glass) */
@@ -884,34 +970,19 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
   -webkit-backdrop-filter: blur(10px); /* Pour la compatibilité Safari */
 
   /* Amélioration de l'ombre/profondeur */
-  /* Combine une ombre extérieure (shadow-xl) avec une ombre intérieure subtile */
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), /* Simule shadow-xl de Tailwind */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
   0 4px 6px -2px rgba(0, 0, 0, 0.05);
-
-  /* Ajout d'une bordure plus douce et subtile si vous souhaitez un contour moins marqué que border-blue-400 */
-  /* border: 1px solid rgba(147, 197, 253, 0.5); /* blue-300 transparent */
 
   /* S'assure que tout est bien centré et réactif */
   min-width: 300px;
   max-width: 90vw; /* Empêche de déborder sur les petits écrans */
 }
 
-/* Vous pourriez également vouloir cibler les inputs pour un look plus plat ou encadré */
-.gantt-edit-form input[type="text"],
-.gantt-edit-form input[type="number"],
-.gantt-edit-form input[type="date"],
-.gantt-edit-form select {
-  transition: all 0.2s ease-in-out;
-}
-
-.gantt-edit-form input:focus,
-.gantt-edit-form select:focus {
-  border-color: #3b82f6; /* blue-500 */
-  box-shadow: 0 0 0 1px #3b82f6;
-}
-
 .g text {
-  font-size: 12px;
+  font-size: 10px;
 }
-
+.task-group {
+  /* Assure que le glissement vertical fonctionne */
+  transform-origin: 0 0;
+}
 </style>

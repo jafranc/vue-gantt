@@ -5,8 +5,8 @@ import GanttChart from './components/GanttChart.vue';
 
 // 1. Déclarez le tableau de tâches réactif, c'est la source de vérité.
 const tasks = ref([
-  { id: 1, name: 'Initialisation du Projet', start: '2013-01-01', end: '2013-01-15', category: 'Planning', isNew: false },
-  { id: 2, name: 'Analyse des Besoins', start: '2013-01-16', end: '2013-02-10', category: 'Planning', isNew: false },
+  { id: 1, name: 'Initialisation du Projet', start: '2013-01-01', end: '2013-01-15', freq: 5, category: 'Planning', isNew: false },
+  { id: 2, name: 'Analyse des Besoins', start: '2013-01-16', end: '2013-02-10', freq:2, category: 'Planning', isNew: false },
   { id: 3, name: 'Phase de Développement', start: '2013-02-11', end: '2013-04-20', category: 'Dev', isNew: false },
   { id: 4, name: 'Tests Unitaires', start: '2013-04-21', end: '2013-04-30', category: 'QA', isNew: false },
   { id: 5, name: 'Déploiement Initial', start: '2013-05-01', end: '2013-05-15', category: 'Livrable', isNew: false },
