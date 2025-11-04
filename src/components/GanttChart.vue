@@ -701,7 +701,7 @@ const renderChart = () => {
 
     if (isSingleDay) {
       // CAS DIAMANT UNIQUE
-      const diamondSize = barHeight;
+      const diamondSize = barHeight / 5;
       const halfSize = diamondSize / 2;
 
       // Centrer la forme sur la position de début (xStart)
