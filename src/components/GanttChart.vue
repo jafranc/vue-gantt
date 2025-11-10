@@ -168,41 +168,55 @@ const effectiveEndDate = computed(() => {
 
 // --- FONCTIONS D'AJOUT/SUPPRESSION/TRI DE TÂCHES ---
 const addTask = () => {
-  const maxId = localTasks.value.length > 0 ? Math.max(...localTasks.value.map(t => t.id)) : 0;
-  const newId = maxId + 1;
+    const maxId = localTasks.value.length > 0 ? Math.max(...localTasks.value.map(t => t.id)) : 0;
+    const newId = maxId + 1;
 
-  let newTask;
-  const defaultCategory = (localTasks.value.length > 0 ? localTasks.value[localTasks.value.length - 1].category : 'Planning') || 'Uncategorized';
+    let newTask;
 
-  if (localTasks.value.length > 0) {
-    const lastTask = localTasks.value[localTasks.value.length - 1];
-    const durationMs = new Date(lastTask.end).getTime() - new Date(lastTask.start).getTime();
-    const newStart = new Date(lastTask.end);
-    newStart.setDate(newStart.getDate() + 1);
-    const newEnd = new Date(newStart.getTime() + durationMs);
+    // NOUVEAU: Déterminer la catégorie par défaut
+    let defaultCategory = 'Planning'; // Valeur de secours
 
-    newTask = {
-      id: newId,
-      name: `Tâche Copiée ${newId}`,
-      start: formatDate(newStart),
-      end: formatDate(newEnd),
-      category: defaultCategory,
-      isNew: true,
-    };
-  } else {
-    const defaultStart = new Date();
-    const defaultEnd = new Date();
-    defaultEnd.setDate(defaultEnd.getDate() + 10);
+    // 1. Si un filtre est sélectionné (et n'est pas 'All'), on utilise la catégorie du filtre.
+    if (selectedCategory.value !== 'All') {
+      defaultCategory = selectedCategory.value;
+    }
+    // 2. Sinon, on utilise la catégorie de la dernière tâche existante (logique de copie)
+    else if (localTasks.value.length > 0) {
+      defaultCategory = localTasks.value[localTasks.value.length - 1].category || 'Planning';
+    }
 
-    newTask = {
-      id: newId,
-      name: `Première Tâche ${newId}`,
-      start: formatDate(defaultStart),
-      end: formatDate(defaultEnd),
-      category: defaultCategory,
-      isNew: true,
-    };
-  }
+    if (localTasks.value.length > 0) {
+      const lastTask = localTasks.value[localTasks.value.length - 1];
+      const durationMs = new Date(lastTask.end).getTime() - new Date(lastTask.start).getTime();
+      const newStart = new Date(lastTask.end);
+      newStart.setDate(newStart.getDate() + 1);
+      const newEnd = new Date(newStart.getTime() + durationMs);
+
+      newTask = {
+        id: newId,
+        name: `Tâche Copiée ${newId}`,
+        start: formatDate(newStart),
+        end: formatDate(newEnd),
+        // UTILISATION DE LA CATÉGORIE CALCULÉE
+        category: defaultCategory,
+        isNew: true,
+      };
+    } else {
+      // ... (Logique pour le premier ajout)
+      const defaultStart = new Date();
+      const defaultEnd = new Date();
+      defaultEnd.setDate(defaultEnd.getDate() + 10);
+
+      newTask = {
+        id: newId,
+        name: `Première Tâche ${newId}`,
+        start: formatDate(defaultStart),
+        end: formatDate(defaultEnd),
+        // UTILISATION DE LA CATÉGORIE CALCULÉE
+        category: defaultCategory,
+        isNew: true,
+      };
+    }
 
   localTasks.value.push(newTask);
 
@@ -213,10 +227,31 @@ const addTask = () => {
 
 const removeLastTask = () => {
   if (localTasks.value.length === 0) return;
-  const maxId = Math.max(...localTasks.value.map(t => t.id));
-  const newTasks = localTasks.value.filter(t => t.id !== maxId);
-  localTasks.value = newTasks;
-  emit('taskUpdated', localTasks.value);
+
+  let tasksToConsider = localTasks.value;
+  let taskToRemoveId = -1;
+
+  // 1. Déterminer sur quel ensemble de tâches travailler
+  if (selectedCategory.value !== 'All') {
+    // Si un filtre est actif, on considère uniquement les tâches de cette catégorie.
+    tasksToConsider = localTasks.value.filter(t => t.category === selectedCategory.value);
+  }
+
+  // 2. Trouver l'ID le plus élevé (la "dernière" tâche ajoutée/avec l'ID max) dans cet ensemble
+  if (tasksToConsider.length > 0) {
+    taskToRemoveId = Math.max(...tasksToConsider.map(t => t.id));
+  } else {
+    // Si l'ensemble est vide (par exemple, le filtre est actif, mais aucune tâche ne correspond), on arrête.
+    return;
+  }
+
+  // 3. Supprimer la tâche trouvée du tableau source `localTasks.value`
+  if (taskToRemoveId !== -1) {
+    const newTasks = localTasks.value.filter(t => t.id !== taskToRemoveId);
+
+    localTasks.value = newTasks;
+    emit('taskUpdated', localTasks.value);
+  }
 }
 
 const refreshSorting = () => {
