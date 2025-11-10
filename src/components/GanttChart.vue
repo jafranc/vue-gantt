@@ -664,7 +664,7 @@ const renderChart = () => {
     let isFolded = false;
 
     // NOUVEAU: Détermine si la tâche est un diamant
-    const isSingleDay = realDuration <= 1;
+    const isSingleDay = realDuration <= 2;
 
     // Ajuster la logique de pliage pour ignorer les tâches d'un seul jour
     if (!isSingleDay && realDuration > threshold) {
