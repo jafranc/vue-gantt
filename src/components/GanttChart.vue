@@ -312,13 +312,15 @@ const editingFormStyle = computed(() => {
 
 const xScale = ref(null);
 const yScale = ref(null);
-
+// Variable d'état pour le champ de fréquence :
+const showFrequencyField = ref(false); // NOUVEAU
 const handleContextMenu = (task) => {
   isDragging.value = false;
 
   if (editingTask.value && editingTask.value.id === task.id) {
     editingTask.value = null;
     newCategoryInput.value = false;
+    showFrequencyField.value = false;
     return;
   }
 
@@ -343,6 +345,7 @@ const handleContextMenu = (task) => {
     freq: task.freq || null,
   };
 
+  showFrequencyField.value = !!task.freq;
   newCategoryInput.value = false;
 
   nextTick(() => {
@@ -397,6 +400,8 @@ const saveDates = () => {
   }
 
   newCategoryInput.value = false;
+// NOUVEAU: S'assurer que freq est soit un nombre > 0, soit null
+  const finalFreq = (editingTask.value.freq > 0) ? editingTask.value.freq : null;
 
   const newStart = new Date(start);
   const newEnd = new Date(end);
@@ -414,7 +419,7 @@ const saveDates = () => {
     start,
     end,
     category: newCategory,
-    freq: freq || null, // Sauvegarde de la fréquence (peut être gérée par un autre champ du form si nécessaire)
+    freq: finalFreq, // Sauvegarde de la fréquence (peut être gérée par un autre champ du form si nécessaire)
   };
 
   const newTasks = [...localTasks.value];
@@ -424,6 +429,7 @@ const saveDates = () => {
   emit('taskUpdated', localTasks.value);
 
   editingTask.value = null;
+  showFrequencyField.value = false; // Réinitialisation
 };
 
 // Calcule la couleur à afficher dans le formulaire d'édition
@@ -950,6 +956,28 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
           </button>
         </div>
       </label>
+
+      <div class="space-y-1">
+        <div class="flex items-center justify-between text-xs font-medium text-gray-600">
+          <label for="enable-freq" class="flex items-center space-x-2 cursor-pointer">
+            <input type="checkbox"
+                   id="enable-freq"
+                   v-model="showFrequencyField"
+                   class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
+            <span>Activer la récurrence</span>
+          </label>
+        </div>
+
+        <label v-if="showFrequencyField" class="text-xs font-medium text-gray-600">
+          Fréquence (récurrence en jours):
+          <input type="number"
+                 v-model.number="editingTask.freq"
+                 placeholder="ex: 7 pour hebdomadaire"
+                 min="1"
+                 class="mt-1 p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500" />
+        </label>
+      </div>
+
       <hr class="border-gray-200 my-1">
 
       <label class="text-xs font-medium text-gray-600">
