@@ -10,6 +10,7 @@ const props = defineProps({
   tasks: { type: Array, default: () => [] },
   startDate: { type: String, default: '2012-12-12' },
   endDate: { type: String, default: '2013-12-13' },
+  availableCategoriesList: { type: Array, default: () => [] },
 });
 
 // --- État Interne pour le Filtrage ---
@@ -51,6 +52,13 @@ const initializeColorMap = (tasks) => {
     }
   });
 
+// 2. NOUVEAU: Ajouter toutes les catégories de la liste fournie par les props
+  props.availableCategoriesList.forEach(c => {
+    if (c && c.trim()) {
+      allCategories.add(c);
+    }
+  });
+
   let newMap = { ...categoryColorMap.value };
   let colorIndex = 0;
 
@@ -73,27 +81,29 @@ const getCategoryColor = (category) => {
   return categoryColorMap.value[category] || '#9CA3AF';
 };
 
-
-// --- ÉTAT D'ÉDITION ET CATÉGORIE ---
-const newCategoryInput = ref(false);
-
 const uniqueExistingCategories = computed(() => {
-  const categories = new Set();
-  localTasks.value.forEach(t => {
-    if (t.category && t.category.trim()) {
-      categories.add(t.category);
-    }
-  });
-  return Array.from(categories).sort();
+  // Option A: Utiliser uniquement la liste fournie par les props.
+  // Retourne une copie triée de la liste de props pour l'édition et le filtre.
+  const listFromProps = props.availableCategoriesList
+      .filter(c => c && c.trim())
+      .sort();
+
+  // Assure qu'il y a toujours au moins un élément si la liste est vide.
+  if (listFromProps.length === 0) {
+    return ['Uncategorized'];
+  }
+  return listFromProps;
 });
 
 const availableCategories = computed(() => {
   const categories = new Set(['All']);
-  localTasks.value.forEach(t => {
-    if (t.category && t.category.trim()) {
-      categories.add(t.category);
+
+  props.availableCategoriesList.forEach(c => {
+    if (c && c.trim()) {
+      categories.add(c);
     }
   });
+
   return Array.from(categories).sort();
 });
 
@@ -319,7 +329,6 @@ const handleContextMenu = (task) => {
 
   if (editingTask.value && editingTask.value.id === task.id) {
     editingTask.value = null;
-    newCategoryInput.value = false;
     showFrequencyField.value = false;
     return;
   }
@@ -346,7 +355,7 @@ const handleContextMenu = (task) => {
   };
 
   showFrequencyField.value = !!task.freq;
-  newCategoryInput.value = false;
+
 
   nextTick(() => {
     const inputElement = document.querySelector('.gantt-edit-form input');
@@ -386,20 +395,7 @@ const saveDates = () => {
   const originalTask = localTasks.value[taskIndex];
 
   let { category } = editingTask.value;
-  let newCategory = category;
 
-  if (newCategoryInput.value && editingTask.value.newCategory) {
-    const newCat = editingTask.value.newCategory.trim();
-    if (newCat) {
-      newCategory = newCat;
-    }
-  }
-
-  if (newCategory !== originalTask.category) {
-    initializeColorMap(localTasks.value.concat([{ category: newCategory }]));
-  }
-
-  newCategoryInput.value = false;
 // NOUVEAU: S'assurer que freq est soit un nombre > 0, soit null
   const finalFreq = (editingTask.value.freq > 0) ? editingTask.value.freq : null;
 
@@ -418,7 +414,7 @@ const saveDates = () => {
     name,
     start,
     end,
-    category: newCategory,
+    category: category,
     freq: finalFreq, // Sauvegarde de la fréquence (peut être gérée par un autre champ du form si nécessaire)
   };
 
@@ -933,28 +929,14 @@ watch([() => localTasks.value, effectiveStartDate, effectiveEndDate, selectedCat
           </span>
         </div>
 
-        <div class="flex items-center space-x-1 mt-1">
-          <select v-if="!newCategoryInput"
-                  v-model="editingTask.category"
-                  class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500 flex-grow">
-            <option v-for="category in uniqueExistingCategories" :key="category" :value="category">
-              {{ category }}
-            </option>
-          </select>
+        <select v-model="editingTask.category"
+                class="p-1 border rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500 flex-grow">
+          <option v-for="category in uniqueExistingCategories" :key="category" :value="category">
+            {{ category }}
+          </option>
+        </select>
 
-          <input v-else
-                 type="text"
-                 v-model="editingTask.newCategory"
-                 placeholder="Nouvelle catégorie..."
-                 class="p-1 border border-blue-500 rounded-md w-full text-sm focus:ring-blue-500 focus:border-blue-500 flex-grow" />
 
-          <button @click="newCategoryInput = !newCategoryInput"
-                  type="button"
-                  class="text-gray-500 hover:text-blue-600 font-bold w-6 h-6 flex items-center justify-center border rounded-full transition duration-150 flex-shrink-0"
-                  :title="newCategoryInput ? 'Annuler l\'entrée' : 'Créer une nouvelle catégorie'">
-            {{ newCategoryInput ? '&times;' : '+' }}
-          </button>
-        </div>
       </label>
 
       <div class="space-y-1">

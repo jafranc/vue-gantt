@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue';
 // Assurez-vous que le chemin d'importation est correct
 import GanttChart from './components/GanttChart.vue';
-
+const categories = ref(['Planning', 'Dev', 'QA', 'Livrable', 'Design', 'Marketing']);
 // 1. Déclarez le tableau de tâches réactif, c'est la source de vérité.
 const tasks = ref([
   { id: 1, name: 'Initialisation du Projet', start: '2013-01-01', end: '2013-01-15', freq: 5, category: 'Planning', isNew: false },
@@ -97,8 +97,7 @@ watch(tasks, (newTasks, oldTasks) => {
       -->
       <GanttChart
           v-model:tasks="tasks"
-          :startDate="projectStart"
-          :endDate="projectEnd"
+          :availableCategoriesList="categories"
           class="p-4 rounded-lg"
       />
 
